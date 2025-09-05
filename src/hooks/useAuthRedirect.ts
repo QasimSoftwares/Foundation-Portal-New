@@ -11,7 +11,7 @@ export function useAuthRedirect(requireAuth = false) {
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading || !pathname) return;
 
     const isAuthPage = pathname.startsWith('/sign') || 
                       pathname.startsWith('/forgot-password') || 
@@ -20,12 +20,15 @@ export function useAuthRedirect(requireAuth = false) {
 
     // If user is authenticated but trying to access auth pages, redirect to dashboard
     if (session && isAuthPage) {
-      const redirectTo = searchParams.get('redirectTo') || '/dashboard';
-      router.replace(redirectTo);
+      const redirectTo = searchParams?.get('redirectTo') || '/dashboard';
+      if (redirectTo) {
+        router.replace(redirectTo);
+      }
     }
     // If user is not authenticated but trying to access protected route, redirect to sign in
     else if (!session && requireAuth) {
-      router.replace(`/signin?redirectTo=${encodeURIComponent(pathname)}`);
+      const safePathname = pathname || '/';
+      router.replace(`/signin?redirectTo=${encodeURIComponent(safePathname)}`);
     }
   }, [session, isLoading, pathname, searchParams, requireAuth, router]);
 

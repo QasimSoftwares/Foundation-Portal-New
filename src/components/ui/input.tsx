@@ -5,8 +5,27 @@ import { cn } from "@/lib/utils"
 export interface InputProps
   extends React.InputHTMLAttributes<HTMLInputElement> {}
 
+// List of attributes that might be added by browser extensions and cause hydration issues
+const IGNORED_ATTRIBUTES = [
+  'fdprocessedid',
+  'data-*', // This is a pattern, actual implementation below will handle all data-* attributes
+];
+
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
   ({ className, type, ...props }, ref) => {
+    // Filter out attributes that might cause hydration issues
+    const filteredProps = Object.entries(props).reduce((acc, [key, value]) => {
+      // Skip attributes that match our ignore list
+      if (IGNORED_ATTRIBUTES.some(attr => 
+        attr.endsWith('*') ? 
+          key.startsWith(attr.replace('*', '')) : 
+          key === attr
+      )) {
+        return acc;
+      }
+      return { ...acc, [key]: value };
+    }, {});
+    
     return (
       <input
         type={type}
@@ -15,7 +34,9 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           className
         )}
         ref={ref}
-        {...props}
+        {...filteredProps}
+        // Ensure these attributes are not overridden by props
+        suppressHydrationWarning={true}
       />
     )
   }

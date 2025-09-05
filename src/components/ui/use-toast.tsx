@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState, useCallback } from 'react';
 
 export type ToastVariant = 'default' | 'success' | 'error' | 'warning' | 'info';

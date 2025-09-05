@@ -18,28 +18,25 @@ export const createMiddlewareClient = (request: NextRequest) => {
         get(name: string) {
           return request.cookies.get(name)?.value;
         },
-        set(name: string, value: string, options: CookieOptions) {
-          request.cookies.set({
-            name,
-            value,
-            ...options,
-          });
+        set(cookieName: string, value: string, options: CookieOptions) {
+          // Only set in response, not in request
+          const { name, ...restOptions } = options;
           response.cookies.set({
-            name,
+            name: cookieName,
             value,
-            ...options,
+            path: '/',
+            ...restOptions,
           });
         },
-        remove(name: string, options: CookieOptions) {
-          request.cookies.set({
-            name,
-            value: '',
-            ...options,
-          });
+        remove(cookieName: string, options: CookieOptions) {
+          // Only set in response, not in request
+          const { name, ...restOptions } = options;
           response.cookies.set({
-            name,
+            name: cookieName,
             value: '',
-            ...options,
+            expires: new Date(0),
+            path: '/',
+            ...restOptions,
           });
         },
       },

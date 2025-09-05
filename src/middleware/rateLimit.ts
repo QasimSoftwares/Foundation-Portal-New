@@ -74,7 +74,7 @@ export const rateLimit = (options: RateLimitOptions = {}) => {
         // Log security event
         await auditEvents.rateLimitExceeded(
           { 
-            ip: req.ip || 'unknown',
+            ip: getClientIP(req) || 'unknown',
             userId: 'unknown',
             email: 'unknown'
           },

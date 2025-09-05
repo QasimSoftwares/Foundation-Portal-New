@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, ReactNode, useEffect, useState } from 'react';
-import { getCSRFToken } from '@/lib/csrf';
+import { getCookie } from 'cookies-next';
 
 interface CSRFContextType {
   csrfToken: string | null;
@@ -12,16 +12,24 @@ interface CSRFContextType {
 
 const CSRFContext = createContext<CSRFContextType | undefined>(undefined);
 
+/**
+ * CSRF Provider component that provides CSRF token to the application
+ * The actual token management is handled by the centralized middleware
+ */
 export const CSRFProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
+  /**
+   * Refresh the CSRF token by reloading the page
+   * The middleware will set a new token in the cookies
+   */
   const refreshToken = async () => {
     try {
       setIsLoading(true);
-      // The CSRF token is now managed by the centralized middleware
-      // We just need to trigger a page refresh to get a new token
+      // The CSRF token is managed by the centralized middleware
+      // Trigger a page reload to get a fresh token
       window.location.reload();
     } catch (err) {
       setError(err instanceof Error ? err : new Error('Failed to refresh CSRF token'));
@@ -33,11 +41,11 @@ export const CSRFProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   useEffect(() => {
     // Initialize CSRF token on mount
-    const initCSRF = () => {
+    const initCSRF = async () => {
       try {
-        // Get the CSRF token from the centralized service
-        const token = getCSRFToken();
-        setCsrfToken(token || null);
+        // Get the CSRF token from cookies
+        const token = getCookie('sb-csrf-token')?.toString() || null;
+        setCsrfToken(token);
       } catch (err) {
         setError(err instanceof Error ? err : new Error('Failed to initialize CSRF token'));
       } finally {

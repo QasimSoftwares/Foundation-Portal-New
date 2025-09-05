@@ -1,28 +1,27 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
-import { AlertCircle, CheckCircle, Loader2, MailCheck } from 'lucide-react';
+import { AlertCircle, CheckCircle, Loader2, Mail as MailIcon } from 'lucide-react';
 import { ErrorBoundary } from 'react-error-boundary';
 import { ErrorFallback } from '@/components/error/ErrorFallback';
+import { fetchWithCSRF } from '@/lib/http/csrf-interceptor';
 
 type VerificationStatus = 'verifying' | 'success' | 'error';
 
-export default function VerifyEmailPage() {
+function VerifyEmailContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [status, setStatus] = useState<VerificationStatus>('verifying');
   const [error, setError] = useState<string | null>(null);
   const [isResending, setIsResending] = useState(false);
   const { toast } = useToast();
-  const supabase = createClientComponentClient();
 
   const handleResendVerification = async () => {
-    const email = searchParams.get('email');
+    const email = searchParams?.get('email');
     if (!email) {
       toast({
         title: 'Error',
@@ -34,20 +33,23 @@ export default function VerifyEmailPage() {
 
     setIsResending(true);
     try {
-      const { error: resendError } = await supabase.auth.resend({
-        type: 'signup',
-        email,
-        options: {
-          emailRedirectTo: `${window.location.origin}/verify-email`,
+      const response = await fetchWithCSRF('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ email }),
       });
 
-      if (resendError) throw resendError;
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to resend verification email');
+      }
 
       toast({
-        title: 'Verification email resent',
+        title: 'Verification email sent',
         description: 'Please check your email for the verification link.',
-        variant: 'default',
       });
     } catch (error) {
       console.error('Error resending verification email:', error);
@@ -63,9 +65,9 @@ export default function VerifyEmailPage() {
 
   useEffect(() => {
     const verifyEmail = async () => {
-      const token = searchParams.get('token');
-      const type = searchParams.get('type');
-      const email = searchParams.get('email');
+      const token = searchParams?.get('token');
+      const type = searchParams?.get('type');
+      const email = searchParams?.get('email');
 
       if (!token || !type) {
         setStatus('error');
@@ -74,12 +76,19 @@ export default function VerifyEmailPage() {
       }
 
       try {
-        const { error: verificationError } = await supabase.auth.verifyOtp({
-          token_hash: token,
-          type: type as any, // 'signup' | 'invite' | 'magiclink' | 'recovery' | 'email_change'
+        const response = await fetchWithCSRF('/api/auth/verify-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ token, type, email }),
         });
 
-        if (verificationError) throw verificationError;
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.message || 'Failed to verify email');
+        }
         
         setStatus('success');
         
@@ -110,7 +119,7 @@ export default function VerifyEmailPage() {
     };
 
     verifyEmail();
-  }, [searchParams, toast, supabase]);
+  }, [searchParams, toast, router]);
 
   if (status === 'verifying') {
     return (
@@ -206,5 +215,17 @@ export default function VerifyEmailPage() {
         </div>
       </div>
     </ErrorBoundary>
+  );
+}
+
+export default function VerifyEmailPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    }>
+      <VerifyEmailContent />
+    </Suspense>
   );
 }

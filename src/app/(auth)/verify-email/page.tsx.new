@@ -1,0 +1,198 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { fetchWithCSRF } from '@/lib/http/csrf-interceptor';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/use-toast';
+import { AlertCircle, CheckCircle, Loader2, Mail, MailCheck } from 'lucide-react';
+import { ErrorBoundary } from 'react-error-boundary';
+import { ErrorFallback } from '@/components/error/ErrorFallback';
+
+type VerificationStatus = 'verifying' | 'success' | 'error';
+
+export default function VerifyEmailPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const [status, setStatus] = useState<VerificationStatus>('verifying');
+  const [error, setError] = useState<string | null>(null);
+  const [isResending, setIsResending] = useState(false);
+  const { toast } = useToast();
+  const supabase = createClientComponentClient();
+
+  const handleResendVerification = async () => {
+    const email = searchParams.get('email');
+    if (!email) {
+      toast({
+        title: 'Error',
+        description: 'Email address is required to resend verification.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsResending(true);
+    try {
+      const response = await fetchWithCSRF('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to resend verification email');
+      }
+
+      toast({
+        title: 'Verification email resent',
+        description: 'Please check your email for the verification link.',
+      });
+    } catch (error) {
+      console.error('Error resending verification email:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to resend verification email',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsResending(false);
+    }
+  };
+
+  useEffect(() => {
+    const verifyEmail = async () => {
+      const token = searchParams.get('token');
+      
+      if (!token) {
+        setStatus('error');
+        setError('No verification token provided');
+        return;
+      }
+
+      try {
+        const response = await fetchWithCSRF('/api/auth/verify-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ token }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.message || 'Email verification failed');
+        }
+
+        setStatus('success');
+      } catch (error) {
+        console.error('Email verification error:', error);
+        setStatus('error');
+        setError(error instanceof Error ? error.message : 'Failed to verify email');
+      }
+    };
+
+    verifyEmail();
+  }, [searchParams]);
+
+  if (status === 'verifying') {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-4 py-12 sm:px-6 lg:px-8">
+        <div className="w-full max-w-md space-y-8">
+          <div className="flex flex-col items-center">
+            <Loader2 className="h-12 w-12 animate-spin text-indigo-600" />
+            <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+              Verifying your email...
+            </h2>
+            <p className="mt-2 text-center text-sm text-gray-600">
+              Please wait while we verify your email address.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === 'success') {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-4 py-12 sm:px-6 lg:px-8">
+        <div className="w-full max-w-md space-y-8 text-center">
+          <div className="flex justify-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
+              <CheckCircle className="h-8 w-8 text-green-600" />
+            </div>
+          </div>
+          <h2 className="mt-6 text-3xl font-extrabold text-gray-900">
+            Email Verified!
+          </h2>
+          <p className="text-gray-600">
+            Your email has been successfully verified. You can now sign in to your account.
+          </p>
+          <div className="mt-6">
+            <Button
+              onClick={() => router.push('/signin')}
+              className="w-full justify-center"
+            >
+              Go to Sign In
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <ErrorBoundary FallbackComponent={ErrorFallback}>
+      <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-4 py-12 sm:px-6 lg:px-8">
+        <div className="w-full max-w-md space-y-8 text-center">
+          <div className="flex justify-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+              <AlertCircle className="h-8 w-8 text-red-600" />
+            </div>
+          </div>
+          <h2 className="mt-6 text-3xl font-extrabold text-gray-900">
+            Verification Failed
+          </h2>
+          <p className="text-gray-600">
+            {error || 'There was a problem verifying your email address.'}
+          </p>
+          
+          <div className="mt-6 space-y-4">
+            <Button
+              onClick={handleResendVerification}
+              disabled={isResending}
+              className="w-full justify-center"
+            >
+              {isResending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Mail className="mr-2 h-4 w-4" />
+                  Resend Verification Email
+                </>
+              )}
+            </Button>
+            
+            <div className="text-sm">
+              <Link 
+                href="/signin" 
+                className="font-medium text-indigo-600 hover:text-indigo-500"
+              >
+                Back to Sign In
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    </ErrorBoundary>
+  );
+}

@@ -1,15 +1,16 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
+import { fetchWithCSRF } from '@/lib/http/csrf-interceptor';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from '@/components/ui/form';
-import { useToast } from '@/components/ui/use-toast';
-import { Loader2, Mail, Lock, AlertCircle } from 'lucide-react';
+import { toast } from 'sonner';
+import { Loader2, Mail, Lock } from 'lucide-react';
 import Link from 'next/link';
 import { ErrorBoundary } from 'react-error-boundary';
 import { ErrorFallback } from '@/components/error/ErrorFallback';
@@ -22,34 +23,13 @@ const signInSchema = z.object({
 
 type SignInFormData = z.infer<typeof signInSchema>;
 
-export default function SignInPage() {
+function SignInContent() {
   const [isLoading, setIsLoading] = useState(false);
-  const [csrfToken, setCsrfToken] = useState<string | null>(null);
-  const [isInitialized, setIsInitialized] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { toast } = useToast();
-
-  // Fetch CSRF token on component mount
-  useEffect(() => {
-    const fetchCsrfToken = async () => {
-      try {
-        const response = await fetch('/api/auth/csrf-token');
-        const data = await response.json();
-        setCsrfToken(data.csrfToken);
-        setIsInitialized(true);
-      } catch (error) {
-        console.error('Failed to fetch CSRF token:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to load security token. Please refresh the page.',
-          variant: 'destructive',
-        });
-      }
-    };
-
-    fetchCsrfToken();
-  }, [toast]);
+  const callbackUrl = searchParams?.get('callbackUrl') || '/dashboard';
+  
+  // The CSRF token is automatically handled by the fetchWithCSRF wrapper
 
   const form = useForm<SignInFormData>({
     resolver: zodResolver(signInSchema),
@@ -60,81 +40,87 @@ export default function SignInPage() {
   });
 
   const onSubmit = async (data: SignInFormData) => {
-    if (!csrfToken || !isInitialized) {
-      toast({
-        title: 'Security Error',
-        description: 'Security token not loaded. Please refresh the page and try again.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
     setIsLoading(true);
+    console.log('Starting sign in...', { email: data.email });
+    
     try {
-      const response = await fetch('/api/auth/login', {
+      console.log('Making sign-in request...');
+      const response = await fetchWithCSRF('/api/auth/signin', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-CSRF-Token': csrfToken || '',
         },
-        body: JSON.stringify({
-          ...data,
-          _csrf: csrfToken,
-        }),
-        credentials: 'include',
+        body: JSON.stringify(data),
+        credentials: 'include', // Important for cookies
       });
 
-      const result = await response.json();
-
+      console.log('Response status:', response.status);
+      const responseData = await response.json().catch(() => ({}));
+      console.log('Response data:', responseData);
+      
       if (!response.ok) {
+        console.error('Sign in failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          data: responseData,
+          headers: Object.fromEntries(response.headers.entries())
+        });
+        
         if (response.status === 403) {
-          const refreshResponse = await fetch('/api/auth/csrf-token');
-          const { csrfToken: newToken } = await refreshResponse.json();
-          if (newToken) {
-            setCsrfToken(newToken);
-            // Retry with new token
-            return onSubmit(data);
-          }
-          throw new Error('Session expired. Please refresh the page and try again.');
+          console.log('CSRF token invalid, reloading page...');
+          // CSRF token is invalid, refresh the page to get a new one
+          window.location.reload();
+          return;
         } else if (response.status === 429) {
           const retryAfter = response.headers.get('Retry-After');
           throw new Error(
             `Too many attempts. ${retryAfter ? `Please try again in ${retryAfter} seconds.` : 'Please try again later.'}`
           );
         } else {
-          // Other API errors
-          throw new Error(result.error?.message || 'Failed to sign in');
+          throw new Error(responseData.error || `Sign in failed with status ${response.status}`);
         }
       }
       
+      console.log('Sign in successful, redirecting...', { callbackUrl });
       // Show success message
-      toast({
-        title: 'Success',
-        description: 'You have been signed in successfully',
-        variant: 'default',
-      });
+      toast.success('You have been signed in successfully');
 
-      // Redirect to dashboard or intended URL
-      const redirectTo = searchParams.get('redirect') || '/dashboard';
-      router.push(redirectTo);
-    } catch (error) {
+      // Add a small delay to ensure toast is visible
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Force a full page reload to ensure all session data is properly loaded
+      // This is important for Next.js to properly handle the authenticated state
+      window.location.href = callbackUrl;
+    } catch (error: unknown) {
       console.error('Sign in error:', error);
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to sign in',
-        variant: 'destructive',
-      });
+      let errorMessage = 'An unknown error occurred';
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        console.error('Error details:', {
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+        });
+      } else if (typeof error === 'object' && error !== null) {
+        // Handle other error-like objects
+        const errorObj = error as Record<string, unknown>;
+        errorMessage = String(errorObj.message || errorMessage);
+        console.error('Error details:', error);
+      }
+      
+      toast.error(`Sign in failed: ${errorMessage}`);
     } finally {
       setIsLoading(false);
     }
   };
 
-  if (!isInitialized) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full space-y-8 text-center">
-          <Loader2 className="mx-auto h-12 w-12 text-indigo-600 animate-spin" />
-          <p className="mt-2 text-sm text-gray-600">Loading security token...</p>
+          <Loader2 className="h-12 w-12 text-indigo-600 animate-spin mx-auto" />
+          <p className="mt-2 text-sm text-gray-600">Signing in...</p>
         </div>
       </div>
     );
@@ -169,7 +155,8 @@ export default function SignInPage() {
                           autoComplete="email"
                           placeholder="Enter your email"
                           {...field}
-                          disabled={isLoading || !isInitialized}
+                          disabled={isLoading}
+                          suppressHydrationWarning
                         />
                       </FormControl>
                       <FormMessage />
@@ -188,7 +175,8 @@ export default function SignInPage() {
                           autoComplete="current-password"
                           placeholder="Enter your password"
                           {...field}
-                          disabled={isLoading || !isInitialized}
+                          disabled={isLoading}
+                          suppressHydrationWarning
                         />
                       </FormControl>
                       <FormMessage />
@@ -212,7 +200,9 @@ export default function SignInPage() {
                 <Button
                   type="submit"
                   className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-                  disabled={isLoading || !isInitialized}
+                  disabled={isLoading}
+                  onClick={() => toast.loading('Signing in...')}
+                  suppressHydrationWarning
                 >
                   {isLoading ? (
                     <>
@@ -252,3 +242,18 @@ export default function SignInPage() {
     </ErrorBoundary>
   );
 }
+
+// Main page component with Suspense boundary
+function SignInPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    }>
+      <SignInContent />
+    </Suspense>
+  );
+}
+
+export default SignInPage;

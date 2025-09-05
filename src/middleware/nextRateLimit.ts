@@ -28,7 +28,10 @@ export const nextRateLimit = (options: RateLimitOptions = {}) => {
   const config = getRateLimitConfig('api');
   const windowMs = options.windowMs || config.windowMs;
   const maxAttempts = options.maxAttempts || config.max;
-  const keyGenerator = options.keyGenerator || ((req) => req.ip || 'unknown');
+  const keyGenerator = options.keyGenerator || ((req) => {
+    const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown';
+    return Array.isArray(ip) ? ip[0] : ip;
+  });
 
   return async (request: NextRequest) => {
     const key = `rate-limit:${keyGenerator(request)}`;

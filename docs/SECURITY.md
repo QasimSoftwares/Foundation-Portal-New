@@ -15,31 +15,57 @@ This document outlines the security measures implemented in the application, inc
 
 ## CSRF Protection
 
+### Overview
+
+We've implemented a robust, centralized CSRF protection system that automatically handles token generation, validation, and rotation. The system is designed to be secure by default while remaining easy to use.
+
 ### How It Works
 
-1. **Token Generation**:
-   - CSRF tokens are generated using `crypto.getRandomValues` for secure randomness
-   - Tokens are stored in HTTP-only cookies named `sb-csrf-token`
-   - Cookie attributes:
-     - `httpOnly: true`
-     - `secure: process.env.NODE_ENV === 'production'`
-     - `sameSite: 'strict'`
-     - `maxAge: 14400` (4 hours)
-     - `path: '/'`
+1. **Token Generation & Management**:
+   - Tokens are generated using Node.js `crypto.randomBytes` for cryptographically secure randomness
+   - Stored in HTTP-only, secure, same-site strict cookies named `sb-csrf-token`
+   - Automatically managed by the centralized CSRF interceptor
+   - Token rotation occurs after sensitive operations
 
-2. **Token Validation**:
-   - Validated for all non-GET, non-HEAD, non-OPTIONS requests
-   - Token can be provided in:
-     - `X-CSRF-Token` header (preferred)
-     - `_csrf` URL parameter (for GET requests when needed)
-   - Token rotation occurs on successful validation for sensitive actions
+2. **Centralized Protection**:
+   - All API routes are automatically protected by default via middleware
+   - Non-GET/HEAD/OPTIONS requests require a valid CSRF token
+   - Token must be provided in the `X-CSRF-Token` header
+   - The `fetchWithCSRF` wrapper automatically handles token management
 
-3. **Sensitive Actions**:
-   - Login
-   - Signup
-   - Password reset
-   - Role changes
-   - Any state-changing operations
+3. **Implementation Details**:
+   - **Middleware**: `withCSRFProtection` wraps API route handlers
+   - **Frontend**: `fetchWithCSRF` wrapper handles token management
+   - **Token Rotation**: Automatic after sensitive operations (login, password reset, etc.)
+   - **Error Handling**: Detailed logging of CSRF validation failures
+
+4. **Sensitive Endpoints (Token Rotation)**:
+   - `/api/auth/signin`
+   - `/api/auth/signup`
+   - `/api/auth/change-password`
+   - `/api/auth/reset-password`
+   - `/api/auth/verify-email`
+
+### Usage Guidelines
+
+#### Frontend
+
+Use the `fetchWithCSRF` wrapper for all API calls that modify state:
+
+```typescript
+import { fetchWithCSRF } from '@/lib/http/csrf-interceptor';
+
+// In your component or utility
+const response = await fetchWithCSRF('/api/endpoint', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(data)
+});
+```
+
+#### API Routes
+
+All API routes are automatically protected by the middleware. No additional code is needed in individual route handlers.
 
 ## Rate Limiting
 

@@ -18,7 +18,7 @@ export default function DashboardPage() {
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold">Dashboard</h1>
-        <Button onClick={handleSignOut} variant="outline">
+        <Button onClick={handleSignOut} variant="outline" suppressHydrationWarning>
           Sign Out
         </Button>
       </div>
@@ -44,10 +44,10 @@ export default function DashboardPage() {
             <CardDescription>Common tasks</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Button className="w-full" onClick={() => router.push('/profile')}>
+            <Button className="w-full" onClick={() => router.push('/profile')} suppressHydrationWarning>
               View Profile
             </Button>
-            <Button className="w-full" variant="outline" onClick={() => router.push('/settings')}>
+            <Button className="w-full" variant="outline" onClick={() => router.push('/settings')} suppressHydrationWarning>
               Account Settings
             </Button>
           </CardContent>

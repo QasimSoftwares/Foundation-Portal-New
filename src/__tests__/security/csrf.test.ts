@@ -1,128 +1,212 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateCSRFToken, validateCSRFToken } from '@/middleware';
+import { generateCSRFToken, validateCSRFToken, withCSRFProtection, generateAndSetCSRFToken, getCSRFTokenFromRequest } from '@/lib/security/csrf';
+import { logger } from '@/lib/logger';
 
-// Simple test runner
-const test = (name: string, fn: () => void | Promise<void>) => {
-  try {
-    const result = fn();
-    if (result instanceof Promise) {
-      return result.then(() => {
-        console.log(`✓ ${name}`);
-      }).catch((error) => {
-        console.error(`✗ ${name}`);
-        console.error(error);
-      });
-    }
-    console.log(`✓ ${name}`);
-  } catch (error) {
-    console.error(`✗ ${name}`);
-    console.error(error);
-  }
-};
-
-const expect = (value: any) => ({
-  toBe: (expected: any) => {
-    if (value !== expected) {
-      throw new Error(`Expected ${value} to be ${expected}`);
-    }
+// Mock logger
+jest.mock('@/lib/logger', () => ({
+  logger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
   },
-  toBeDefined: () => {
-    if (value === undefined || value === null) {
-      throw new Error('Expected value to be defined');
-    }
-  },
-  toBeUndefined: () => {
-    if (value !== undefined) {
-      throw new Error(`Expected value to be undefined, got ${value}`);
-    }
-  },
-  toMatch: (pattern: RegExp) => {
-    if (!pattern.test(value)) {
-      throw new Error(`Expected ${value} to match ${pattern}`);
-    }
-  },
-  toHaveLength: (length: number) => {
-    if (value.length !== length) {
-      throw new Error(`Expected length ${length}, got ${value.length}`);
-    }
-  }
-});
+}));
 
-console.log('Running CSRF Protection Tests');
+// Mock cookies-next
+const mockCookies: Record<string, string> = {};
+jest.mock('cookies-next', () => ({
+  getCookie: jest.fn((name: string) => mockCookies[name]),
+  setCookie: jest.fn((name: string, value: string) => {
+    mockCookies[name] = value;
+  }),
+}));
 
-// Group tests
-const runTests = () => {
-  console.log('\nTesting generateCSRFToken');
-  test('should generate a 64-character hex string', () => {
-    const token = generateCSRFToken();
-    expect(token).toHaveLength(64);
-    expect(token).toMatch(/^[a-f0-9]+$/);
-  });
+describe('CSRF Protection', () => {
+  // Mock CSRF config
+  const CSRF_CONFIG = {
+    COOKIE_NAME: 'sb-csrf-token',
+    HEADER_NAME: 'x-csrf-token',
+    NEW_TOKEN_HEADER: 'x-new-csrf-token',
+  };
 
-  console.log('\nTesting validateCSRFToken');
-  const mockRequest = (token: string | null, path: string = '/api/test', method: string = 'POST') => {
+  // Mock Next.js request/response
+  const createMockRequest = ({
+    method = 'POST',
+    path = '/api/test',
+    token = 'test-csrf-token',
+    includeHeader = true,
+    includeCookie = true,
+  } = {}) => {
     const headers = new Headers();
-    if (token) {
-      headers.set('x-csrf-token', token);
+    if (includeHeader && token) {
+      headers.set(CSRF_CONFIG.HEADER_NAME, token);
     }
-    return new NextRequest(`http://localhost${path}`, {
+    
+    // Set up cookies in the mock
+    if (includeCookie && token) {
+      mockCookies[CSRF_CONFIG.COOKIE_NAME] = token;
+    } else {
+      delete mockCookies[CSRF_CONFIG.COOKIE_NAME];
+    }
+    
+    const request = new NextRequest(`http://localhost${path}`, {
       method,
       headers,
     });
+    
+    // Mock cookies getter
+    Object.defineProperty(request, 'cookies', {
+      get: jest.fn(() => ({
+        get: (name: string) => mockCookies[name],
+      })),
+    });
+
+    // Mock IP
+    Object.defineProperty(request, 'ip', {
+      value: '127.0.0.1',
+    });
+
+    // Mock nextUrl for path matching
+    Object.defineProperty(request, 'nextUrl', {
+      value: new URL(`http://localhost${path}`),
+    });
+
+    return request;
   };
 
-  test('should validate token for sensitive actions', async () => {
-    const token = 'testtoken123';
-    const request = mockRequest(token, '/api/auth/signin');
-    const response = NextResponse.next();
-    
-    // Mock the cookie
-    request.cookies.set({
-      name: 'sb-csrf-token',
-      value: token,
+  // Mock handler that returns a promise
+  const mockHandler = async () => {
+    return NextResponse.json({ success: true });
+  };
+
+  beforeEach(() => {
+    // Clear mocks between tests
+    jest.clearAllMocks();
+    Object.keys(mockCookies).forEach(key => delete mockCookies[key]);
+  });
+
+  describe('Token Generation', () => {
+    it('should generate a 64-character hex string', () => {
+      const token = generateCSRFToken();
+      expect(token).toHaveLength(64);
+      expect(token).toMatch(/^[0-9a-f]+$/);
     });
-    
-    const result = await validateCSRFToken(token, request, response);
-    expect(result.isValid).toBe(true);
-    expect(result.newToken).toBeDefined(); // Token should be rotated for sensitive actions
   });
 
-  test('should not rotate token for non-sensitive actions', async () => {
-    const token = 'testtoken123';
-    const request = mockRequest(token, '/api/non-sensitive');
-    const response = NextResponse.next();
-    
-    // Mock the cookie
-    request.cookies.set({
-      name: 'sb-csrf-token',
-      value: token,
+  describe('Token Validation', () => {
+    it('should validate matching tokens', () => {
+      const token = 'test-token';
+      expect(validateCSRFToken(token, token)).toBe(true);
     });
-    
-    const result = await validateCSRFToken(token, request, response);
-    expect(result.isValid).toBe(true);
-    expect(result.newToken).toBeUndefined(); // Token should not be rotated
-  });
 
-  test('should reject invalid tokens', async () => {
-    const request = mockRequest('invalid-token');
-    const response = NextResponse.next();
-    request.cookies.set({
-      name: 'sb-csrf-token',
-      value: 'valid-token',
+    it('should reject mismatched tokens', () => {
+      expect(validateCSRFToken('token1', 'token2')).toBe(false);
     });
-    
-    const result = await validateCSRFToken('invalid-token', request, response);
-    expect(result.isValid).toBe(false);
+
+    it('should reject empty tokens', () => {
+      expect(validateCSRFToken('', '')).toBe(false);
+      expect(validateCSRFToken(null, 'token')).toBe(false);
+      expect(validateCSRFToken('token', null)).toBe(false);
+      expect(validateCSRFToken(null, null)).toBe(false);
+    });
   });
 
-  test('should reject missing tokens', async () => {
-    const request = mockRequest(null);
-    const response = NextResponse.next();
-    
-    const result = await validateCSRFToken(null, request, response);
-    expect(result.isValid).toBe(false);
-  });
-};
+  describe('Middleware', () => {
+    it('should allow GET requests without CSRF token', async () => {
+      const request = createMockRequest({ method: 'GET', includeHeader: false });
+      const response = await withCSRFProtection(mockHandler)(request);
+      expect(response.status).toBe(200);
+    });
 
-// Run all tests
-runTests();
+    it('should allow HEAD requests without CSRF token', async () => {
+      const request = createMockRequest({ method: 'HEAD', includeHeader: false });
+      const response = await withCSRFProtection(mockHandler)(request);
+      expect(response.status).toBe(200);
+    });
+
+    it('should allow OPTIONS requests without CSRF token', async () => {
+      const request = createMockRequest({ method: 'OPTIONS', includeHeader: false });
+      const response = await withCSRFProtection(mockHandler)(request);
+      expect(response.status).toBe(200);
+    });
+
+    it('should block POST requests without CSRF token', async () => {
+      const request = createMockRequest({ method: 'POST', includeHeader: false, includeCookie: false });
+      const response = await withCSRFProtection(mockHandler)(request);
+      expect(response.status).toBe(403);
+      expect(logger.warn).toHaveBeenCalledWith(
+        'CSRF validation failed',
+        expect.objectContaining({
+          path: '/api/test',
+          method: 'POST',
+          hasToken: false,
+          tokenValid: 'missing',
+        })
+      );
+    });
+
+    it('should allow POST requests with valid CSRF token', async () => {
+      const token = 'test-csrf-token';
+      const request = createMockRequest({ method: 'POST', token, includeHeader: true, includeCookie: true });
+      const response = await withCSRFProtection(mockHandler)(request);
+      expect(response.status).toBe(200);
+    });
+
+    it('should block POST requests with invalid CSRF token', async () => {
+      const request = createMockRequest({ 
+        method: 'POST', 
+        token: 'valid-token',
+        includeHeader: true,
+        includeCookie: true
+      });
+      
+      // Override the header with an invalid token
+      request.headers.set(CSRF_CONFIG.HEADER_NAME, 'invalid-token');
+      
+      const response = await withCSRFProtection(mockHandler)(request);
+      expect(response.status).toBe(403);
+      expect(logger.warn).toHaveBeenCalledWith(
+        'CSRF validation failed',
+        expect.objectContaining({
+          path: '/api/test',
+          method: 'POST',
+          hasToken: true,
+          tokenValid: false,
+        })
+      );
+    });
+
+    it('should rotate token for sensitive endpoints', async () => {
+      const token = 'test-csrf-token';
+      const request = createMockRequest({ 
+        method: 'POST', 
+        path: '/api/auth/signin',
+        token,
+        includeHeader: true,
+        includeCookie: true
+      });
+      
+      const response = await withCSRFProtection(mockHandler)(request);
+      expect(response.status).toBe(200);
+      
+      // Check if new token header is set
+      expect(response.headers.get(CSRF_CONFIG.NEW_TOKEN_HEADER)).toBeDefined();
+      expect(response.headers.get(CSRF_CONFIG.NEW_TOKEN_HEADER)).not.toBe(token);
+    });
+
+    it('should get CSRF token from request', () => {
+      const token = 'test-token';
+      const request = createMockRequest({ token, includeHeader: true, includeCookie: true });
+      const requestToken = getCSRFTokenFromRequest(request);
+      expect(requestToken).toBe(token);
+    });
+
+    it('should generate and set CSRF token in response', () => {
+      const response = new NextResponse();
+      const token = generateAndSetCSRFToken(response);
+      
+      expect(token).toBeDefined();
+      expect(token).toHaveLength(64);
+      expect(response.headers.get('set-cookie')).toContain(CSRF_CONFIG.COOKIE_NAME);
+    });
+  });
+});

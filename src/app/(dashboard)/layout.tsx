@@ -1,7 +1,8 @@
 import { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { cn } from '@/lib/utils';
-import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { Suspense } from 'react';
+import { Home, User, Settings, Loader2 } from 'lucide-react';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -16,8 +17,12 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <ProtectedRoute>
-      <div className={cn('min-h-screen bg-gray-50', inter.className)}>
+    <div className={cn('min-h-screen bg-gray-50', inter.className)}>
+      <Suspense fallback={
+        <div className="flex items-center justify-center min-h-screen">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        </div>
+      }>
         {/* Add your dashboard layout structure here */}
         <div className="flex">
           {/* Sidebar */}
@@ -37,19 +42,33 @@ export default function DashboardLayout({
             {children}
           </main>
         </div>
+      </Suspense>
       </div>
-    </ProtectedRoute>
   );
 }
 
 // Helper component for navigation items
 function NavItem({ href, icon, children }: { href: string; icon: string; children: React.ReactNode }) {
+  const getIcon = () => {
+    switch (icon) {
+      case 'dashboard':
+        return <Home className="h-5 w-5" />;
+      case 'user':
+        return <User className="h-5 w-5" />;
+      case 'settings':
+        return <Settings className="h-5 w-5" />;
+      default:
+        return null;
+    }
+  };
+
   return (
     <a
       href={href}
-      className="flex items-center px-6 py-3 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+      className="flex items-center px-6 py-3 text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors"
     >
-      <span className="mx-3">{children}</span>
+      <span className="mr-3">{getIcon()}</span>
+      <span>{children}</span>
     </a>
   );
 }

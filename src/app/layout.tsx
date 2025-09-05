@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import { SupabaseProvider } from '@/components/providers/supabase-provider';
-import { ToastContainer } from '@/components/ui/toast-container';
+import { ToastProvider } from '@/components/providers/toast-provider';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -20,8 +20,9 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <SupabaseProvider>
-          {children}
-          <ToastContainer />
+          <ToastProvider>
+            {children}
+          </ToastProvider>
         </SupabaseProvider>
       </body>
     </html>

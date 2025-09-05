@@ -1,0 +1,66 @@
+import { User } from '@supabase/supabase-js';
+
+export interface SessionUser extends User {
+  role?: string;
+  email_verified?: boolean;
+}
+
+export interface SessionData {
+  user: SessionUser | null;
+  accessToken: string | null;
+  refreshToken: string | null;
+  expiresAt: number | null;
+}
+
+export interface SessionValidationResult {
+  isValid: boolean;
+  user: SessionUser | null;
+  error?: {
+    code: string;
+    message: string;
+  };
+}
+
+export interface RefreshResult {
+  success: boolean;
+  session?: SessionData;
+  error?: {
+    code: string;
+    message: string;
+  };
+}
+
+export interface SessionManagerConfig {
+  accessTokenCookieName: string;
+  refreshTokenCookieName: string;
+  accessTokenMaxAge: number;
+  refreshTokenMaxAge: number;
+  cookieDomain?: string;
+  secureCookies: boolean;
+  sameSite: 'strict' | 'lax' | 'none';
+}
+
+export interface WithSessionOptions {
+  /**
+   * If true, requires the user to be authenticated
+   * @default true
+   */
+  requireAuth?: boolean;
+  
+  /**
+   * Required user roles to access the route
+   * If empty, any authenticated user can access
+   */
+  requiredRoles?: string[];
+  
+  /**
+   * If true, requires the user to have a verified email
+   * @default false
+   */
+  requireEmailVerified?: boolean;
+  
+  /**
+   * Custom error handler for authentication/authorization failures
+   */
+  onError?: (error: { code: string; message: string }) => void;
+}

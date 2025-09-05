@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withAuth } from './middleware';
+import { createClient, withAuth } from './middleware';
 import { Request, Response, NextFunction, RequestHandler } from 'express';
+import { SupabaseClient } from '@supabase/supabase-js';
 
 export const expressWithAuth = (requiredRole?: string): RequestHandler => {
   return async (req: Request, res: Response, next: NextFunction) => {
@@ -35,10 +36,32 @@ export const expressWithAuth = (requiredRole?: string): RequestHandler => {
         [Symbol.for('NextInternalRequestMeta')]: {}
       } as unknown as NextRequest;
 
-      const response = await withAuth(
-        async () => NextResponse.next(),
-        requiredRole
-      )(nextRequest);
+      // Create an auth handler with role check if needed
+      const authHandler = requiredRole 
+        ? async (req: NextRequest) => {
+            const { supabase } = createClient(req);
+            const { data: { session }, error } = await (supabase as any).auth.getSession();
+            
+            if (error || !session) {
+              return NextResponse.redirect(new URL('/signin', req.url));
+            }
+            
+            // Check user role if required
+            const { data: userData } = await (supabase as any)
+              .from('user_roles')
+              .select('role')
+              .eq('user_id', session.user.id)
+              .single();
+              
+            if (userData?.role !== requiredRole) {
+              return new NextResponse('Forbidden', { status: 403 });
+            }
+            
+            return NextResponse.next();
+          }
+        : withAuth(async () => NextResponse.next())
+        
+      const response = await authHandler(nextRequest);
 
       if (response.status === 401 || response.status === 403) {
         return res.status(response.status).json({ 

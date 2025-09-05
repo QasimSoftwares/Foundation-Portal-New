@@ -26,27 +26,45 @@ export function createClient() {
 }
 
 // Server client for server components and API routes
-export function createServerClient() {
+export async function createServerClient() {
+  const cookieStore = await cookies();
+  
   return createServerComponent<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
         get(name: string) {
-          return cookies().get(name)?.value;
+          return cookieStore.get(name)?.value;
         },
         set(name: string, value: string, options: any) {
           try {
-            cookies().set({ name, value, ...options });
+            // In Next.js 14+, cookies are set via the response headers
+            // The actual cookie setting should be handled by the response object
+            // in the API route or server component
+            // We'll just return the cookie data to be set by the response
+            return { name, value, ...options };
           } catch (error) {
             console.error('Error setting cookie:', error);
+            return null;
           }
         },
         remove(name: string, options: any) {
           try {
-            cookies().set({ name, value: '', ...options, maxAge: 0 });
+            // Return cookie removal data to be set by the response
+            return { 
+              name, 
+              value: '', 
+              ...options, 
+              path: '/',
+              maxAge: 0,
+              sameSite: 'lax',
+              secure: process.env.NODE_ENV === 'production',
+              httpOnly: true
+            };
           } catch (error) {
             console.error('Error removing cookie:', error);
+            return null;
           }
         },
       },

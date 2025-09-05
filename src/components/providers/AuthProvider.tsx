@@ -34,7 +34,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         router.refresh();
       } else if (event === 'SIGNED_OUT') {
         // Redirect to signin page if signed out
-        if (!pathname.startsWith('/signin') && !pathname.startsWith('/signup')) {
+        if (pathname && !pathname.startsWith('/signin') && !pathname.startsWith('/signup')) {
           router.push('/signin');
         }
       }

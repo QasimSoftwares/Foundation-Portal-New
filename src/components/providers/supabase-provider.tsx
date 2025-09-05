@@ -23,7 +23,7 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
   const supabase = createClientComponentClient();
   const router = useRouter();
 
-  const refreshSession = async () => {
+  const refreshSession = async (): Promise<void> => {
     try {
       setIsLoading(true);
       const { data: { session: newSession }, error } = await supabase.auth.getSession();
@@ -41,6 +41,24 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
       console.error('Error refreshing session:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+  
+  const signOut = async (): Promise<void> => {
+    try {
+      // Clear local state first
+      setSession(null);
+      setUser(null);
+      
+      // Sign out from Supabase
+      await supabase.auth.signOut();
+      
+      // Clear any lingering auth cookies
+      document.cookie = 'sb-auth-token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+      
+    } catch (error) {
+      console.error('Error signing out:', error);
+      throw error; // Re-throw to be handled by the component
     }
   };
 
@@ -65,11 +83,6 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
       subscription?.unsubscribe();
     };
   }, []);
-
-  const signOut = async () => {
-    await supabase.auth.signOut();
-    router.push('/signin');
-  };
 
   return (
     <SupabaseContext.Provider

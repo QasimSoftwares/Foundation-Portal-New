@@ -45,7 +45,7 @@ interface SessionData {
 
 const router = Router();
 
-// Login endpoint - CSRF is now handled by the centralized middleware
+// Login endpoint - CSRF protection handled by middleware
 router.post('/login', async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
@@ -129,7 +129,7 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 });
 
-// Logout endpoint - CSRF is now handled by the centralized middleware
+// Logout endpoint - CSRF protection handled by middleware
 router.post('/logout', async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
@@ -137,7 +137,7 @@ router.post('/logout', async (req: Request, res: Response) => {
     // Clear session cookies
     res.clearCookie('sb-access-token');
     res.clearCookie('sb-refresh-token', { path: '/auth/refresh' });
-    res.clearCookie('sb-csrf-token');
+    // CSRF cookie is managed by the middleware
 
     // Sign out from Supabase client
     const { error } = await supabaseClient.auth.signOut();
@@ -174,13 +174,13 @@ router.post('/logout', async (req: Request, res: Response) => {
   }
 });
 
-// Email verification endpoint - CSRF is now handled by the centralized middleware
+// Email verification endpoint - CSRF protection handled by middleware
 router.post('/verify-email', async (req: Request, res: Response) => {
   // Verify email logic here
   res.status(501).json({ message: 'Not implemented' });
 });
 
-// Password reset request endpoint - CSRF is now handled by the centralized middleware
+// Password reset request endpoint - CSRF protection handled by middleware
 router.post('/forgot-password', async (req: Request, res: Response) => {
   try {
     // Password reset logic here
@@ -191,7 +191,7 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
   }
 });
 
-// Signup endpoint - CSRF is now handled by the centralized middleware
+// Signup endpoint - CSRF protection handled by middleware
 router.post('/signup', async (req: Request, res: Response) => {
   try {
     // Signup logic here
@@ -202,7 +202,7 @@ router.post('/signup', async (req: Request, res: Response) => {
   }
 });
 
-// Refresh token endpoint with rotation - CSRF is now handled by the centralized middleware
+// Refresh token endpoint with rotation - CSRF protection handled by middleware
 router.post('/refresh', async (req: Request, res: Response) => {
   const refreshToken = req.cookies['sb-refresh-token'];
   
@@ -280,10 +280,15 @@ router.get('/me', async (req: Request, res: Response) => {
   }
 });
 
-// Generate CSRF token for the session
+// CSRF token is now handled by the centralized middleware
+// This endpoint is kept for backward compatibility but will be deprecated
 router.get('/csrf-token', (req: Request, res: Response) => {
-  // CSRF token is now handled by the centralized middleware
-  res.status(501).json({ message: 'Not implemented' });
+  // The middleware will automatically set the CSRF token in cookies
+  // Just return a success response
+  res.status(200).json({ 
+    message: 'CSRF token is automatically managed by the middleware',
+    note: 'Include the CSRF token from cookies in the X-CSRF-Token header for non-GET requests'
+  });
 });
 
 export default router;

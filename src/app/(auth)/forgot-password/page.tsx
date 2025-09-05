@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { fetchWithCSRF } from '@/lib/http/csrf-interceptor';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -24,32 +25,11 @@ type FormData = z.infer<typeof formSchema>;
 export default function ForgotPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
-  const [csrfToken, setCsrfToken] = useState<string | null>(null);
-  const [isInitialized, setIsInitialized] = useState(false);
   const { toast } = useToast();
   const router = useRouter();
   const supabase = createClientComponentClient();
-
-  // Fetch CSRF token on component mount
-  useEffect(() => {
-    const fetchCsrfToken = async () => {
-      try {
-        const response = await fetch('/api/auth/csrf-token');
-        const data = await response.json();
-        setCsrfToken(data.csrfToken);
-        setIsInitialized(true);
-      } catch (error) {
-        console.error('Failed to fetch CSRF token:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to load security token. Please refresh the page.',
-          variant: 'destructive',
-        });
-      }
-    };
-
-    fetchCsrfToken();
-  }, [toast]);
+  
+  // CSRF token is automatically handled by fetchWithCSRF wrapper
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -58,45 +38,21 @@ export default function ForgotPasswordPage() {
     },
   });
 
-  const onSubmit = async (formData: FormData) => {
-    if (!csrfToken || !isInitialized) {
-      toast({
-        title: 'Security Error',
-        description: 'Security token not loaded. Please refresh the page and try again.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
+  const onSubmit = async (data: FormData) => {
     setIsLoading(true);
     try {
-      const response = await fetch('/api/auth/forgot-password', {
+      const response = await fetchWithCSRF('/api/auth/forgot-password', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-CSRF-Token': csrfToken,
         },
-        body: JSON.stringify({
-          email: formData.email,
-          _csrf: csrfToken,
-        }),
-        credentials: 'include',
+        body: JSON.stringify(data),
       });
 
       const result = await response.json();
 
       if (!response.ok) {
-        if (response.status === 403) {
-          // CSRF token validation failed - refresh token and retry once
-          const refreshResponse = await fetch('/api/auth/csrf-token');
-          const { csrfToken: newToken } = await refreshResponse.json();
-          if (newToken) {
-            setCsrfToken(newToken);
-            // Retry with new token
-            return onSubmit(formData);
-          }
-          throw new Error('Session expired. Please refresh the page and try again.');
-        } else if (response.status === 429) {
+        if (response.status === 429) {
           // Rate limit exceeded
           const retryAfter = response.headers.get('Retry-After');
           throw new Error(
@@ -111,7 +67,6 @@ export default function ForgotPasswordPage() {
       toast({
         title: 'Email sent',
         description: 'Check your email for a link to reset your password.',
-        variant: 'default',
       });
     } catch (error) {
       console.error('Error sending reset password email:', error);
@@ -125,16 +80,7 @@ export default function ForgotPasswordPage() {
     }
   };
 
-  if (!isInitialized) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-md w-full space-y-8 text-center">
-          <Loader2 className="mx-auto h-12 w-12 text-indigo-600 animate-spin" />
-          <p className="mt-2 text-sm text-gray-600">Loading security token...</p>
-        </div>
-      </div>
-    );
-  }
+  // No need to check for CSRF token initialization as it's handled by the interceptor
 
   if (emailSent) {
     return (
@@ -212,7 +158,7 @@ export default function ForgotPasswordPage() {
                           type="email"
                           placeholder="example@email.com"
                           {...field}
-                          disabled={isLoading || !isInitialized}
+                          disabled={isLoading}
                         />
                       </div>
                       <FormMessage />

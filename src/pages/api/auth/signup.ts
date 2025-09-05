@@ -1,8 +1,8 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { createApiResponse } from '@/lib/api-utils';
 import { SignUpRequest } from '@/types/api';
-import { createServerSupabaseClient } from '@supabase/auth-helpers-nextjs';
-import { Database } from '@/types/supabase';
+import { sessionManager } from '@/security/session';
+import { NextResponse } from 'next/server';
 
 // CSRF protection is handled by the middleware
 export default async function signupHandler(
@@ -19,7 +19,6 @@ export default async function signupHandler(
   }
 
   try {
-
     const { email, password, fullName, acceptTerms } = req.body as SignUpRequest;
 
     // Basic validation
@@ -37,7 +36,7 @@ export default async function signupHandler(
       });
     }
 
-    const supabase = createServerSupabaseClient<Database>({ req, res });
+    const supabase = sessionManager.getSupabaseClient();
     
     // Check if user already exists
     const { data: existingUser } = await supabase
@@ -66,36 +65,89 @@ export default async function signupHandler(
     });
 
     if (error) {
+      console.error('Signup error:', error);
       return createApiResponse(res, 400, undefined, {
         code: 'SIGNUP_FAILED',
-        message: 'Failed to create account. Please try again.',
-        details: error.message,
+        message: error.message || 'Failed to create account. Please try again.',
       });
     }
 
-    // Create user profile in database using RPC
-    const { error: profileError } = await supabase.rpc('create_user_profile', {
-      p_user_id: data.user?.id,
-      p_email: email,
-      p_full_name: fullName,
-    });
+    if (!data.user) {
+      return createApiResponse(res, 500, undefined, {
+        code: 'USER_CREATION_FAILED',
+        message: 'Failed to create user account',
+      });
+    }
+
+    // Create user profile in database
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .insert([
+        {
+          id: data.user.id,
+          email: email,
+          full_name: fullName,
+          verification_status: 'pending',
+          role: 'user',
+        },
+      ]);
 
     if (profileError) {
       console.error('Failed to create user profile:', profileError);
-      // Don't fail the request since auth was successful
+      // Attempt to delete the auth user if profile creation fails
+      await supabase.auth.admin.deleteUser(data.user.id);
+      return createApiResponse(res, 500, undefined, {
+        code: 'PROFILE_CREATION_FAILED',
+        message: 'Failed to create user profile',
+      });
     }
 
-    // Don't send sensitive data back
-    return createApiResponse(res, 201, {
+    // Send verification email if it wasn't sent automatically
+    if (!data.session) {
+      const { error: emailError } = await supabase.auth.resend({
+        type: 'signup',
+        email: email,
+        options: {
+          emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/verify-email`,
+        },
+      });
+
+      if (emailError) {
+        console.error('Failed to send verification email:', emailError);
+      }
+    }
+
+    // Create a response
+    const response = {
       message: 'Account created successfully. Please check your email to verify your account.',
-      email: data.user?.email,
+      email: data.user.email,
       requiresConfirmation: true,
-    });
+    };
+
+    // If we have a session (email confirmation not required), set session cookies
+    if (data.session) {
+      const nextRes = new NextResponse(JSON.stringify(response), {
+        status: 201,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      // Set secure session cookies
+      sessionManager.setSessionCookies(nextRes, data.session);
+
+      // Copy cookies to the Express response
+      nextRes.cookies.getAll().forEach(cookie => {
+        res.setHeader('Set-Cookie', cookie.toString());
+      });
+    }
+
+    return createApiResponse(res, 201, response);
   } catch (error) {
-    console.error('Signup error:', error);
+    console.error('Unexpected signup error:', error);
     return createApiResponse(res, 500, undefined, {
-      code: 'SIGNUP_ERROR',
-      message: 'An error occurred while creating your account. Please try again.'
+      code: 'INTERNAL_SERVER_ERROR',
+      message: 'An unexpected error occurred while creating your account.',
     });
   }
 }

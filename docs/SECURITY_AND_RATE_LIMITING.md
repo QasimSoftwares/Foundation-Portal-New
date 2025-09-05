@@ -144,28 +144,64 @@ The middleware includes the following response headers:
 ### How It Works
 
 1. **Token Generation**:
-   - CSRF tokens are generated using `crypto.getRandomValues` for secure randomness
-   - Tokens are stored in HTTP-only cookies named `sb-csrf-token`
-   - Cookie attributes:
+   - Generated using `crypto.randomBytes(32)` (256-bit entropy)
+   - Stored in HTTP-only, secure, same-site strict cookies
+   - Default TTL of 24 hours
+   - Automatic token rotation for sensitive operations
+
+2. **Token Storage**:
+   - **Cookie Name**: `sb-csrf-token`
+   - **Attributes**:
      - `httpOnly: true`
-     - `secure: process.env.NODE_ENV === 'production'`
+     - `secure: true` (in production)
      - `sameSite: 'strict'`
-     - `maxAge: 14400` (4 hours)
      - `path: '/'`
+     - `maxAge: 86400` (24 hours)
 
-2. **Token Validation**:
-   - Validated for all non-GET, non-HEAD, non-OPTIONS requests
-   - Token can be provided in:
-     - `X-CSRF-Token` header (preferred)
-     - `_csrf` URL parameter (for GET requests when needed)
-   - Token rotation occurs on successful validation for sensitive actions
+3. **Request Flow**:
+   - **Non-modifying requests (GET/HEAD/OPTIONS)**:
+     - No CSRF token required
+     - Token is set in cookie if not present
+   - **Modifying requests (POST/PUT/DELETE/PATCH)**:
+     - Requires valid `X-CSRF-Token` header
+     - Token is validated against cookie value
+     - New token generated and set in response for sensitive operations
 
-3. **Sensitive Actions**:
-   - Login
-   - Signup
-   - Password reset
-   - Role changes
+4. **Sensitive Operations (Token Rotation)**:
+   - Login/Logout
+   - Password changes
+   - Email verification
    - Any state-changing operations
+   - Token rotation is indicated via `X-New-CSRF-Token` header
+
+5. **Security Measures**:
+   - Timing-safe comparison to prevent timing attacks
+   - Automatic token generation for new sessions
+   - Comprehensive error logging
+   - Type-safe implementation
+
+### Frontend Integration
+
+The frontend uses a `fetchWithCSRF` wrapper that automatically:
+- Adds the CSRF token to non-GET requests
+- Handles token rotation from responses
+- Manages error cases consistently
+
+```typescript
+// Example usage
+const response = await fetchWithCSRF('/api/endpoint', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(data)
+});
+```
+
+### Error Handling
+
+- **Missing Token**: 403 Forbidden
+- **Invalid Token**: 403 Forbidden (with detailed logging)
+- **Token Mismatch**: 403 Forbidden (prevents timing attacks)
+- **Server Errors**: 500 Internal Server Error (with request ID)
 
 ## Security Headers
 
