@@ -50,6 +50,13 @@ export default function DashboardPage() {
             <Button className="w-full" variant="outline" onClick={() => router.push('/settings')} suppressHydrationWarning>
               Account Settings
             </Button>
+            <Button 
+              className="w-full bg-brand-blue hover:bg-blue-700 text-white" 
+              onClick={() => router.push('/donor-request')} 
+              suppressHydrationWarning
+            >
+              Become a Donor
+            </Button>
           </CardContent>
         </Card>
       </div>

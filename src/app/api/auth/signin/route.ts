@@ -63,15 +63,20 @@ export async function POST(request: Request) {
     });
 
     if (error || !data.session) {
-      const message = error?.message || 'Invalid login credentials';
+      const isInvalidCredentials = error?.status === 400;
+      const message = isInvalidCredentials ? 'Incorrect email or password' : (error?.message || 'Invalid login credentials');
+      const errorCode = isInvalidCredentials ? 'INVALID_CREDENTIALS' : 'AUTH_ERROR';
+      
       logger.warn('Sign in failed', { 
         email, 
         ip,
         uaHash,
+        errorCode,
         message,
       });
+      
       return NextResponse.json(
-        { error: { code: 'SIGNIN_FAILED', message } },
+        { error: { code: errorCode, message } },
         { status: 401, headers: response.headers }
       );
     }
@@ -136,7 +141,7 @@ export async function POST(request: Request) {
     });
 
     // Return user data (excluding sensitive info)
-    const { user } = data;
+    const { user, session } = data;
     const userData = {
       id: user.id,
       email: user.email,
@@ -144,7 +149,14 @@ export async function POST(request: Request) {
       email_verified: user.email_confirmed_at !== null,
     };
 
-    return NextResponse.json({ user: userData }, {
+    // Include tokens so client can establish Supabase-js session (localStorage)
+    const sessionTokens = {
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+      expires_at: session.expires_at,
+    };
+
+    return NextResponse.json({ user: userData, session: sessionTokens }, {
       status: 200,
       headers: response.headers,
     });

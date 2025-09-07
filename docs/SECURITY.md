@@ -252,26 +252,58 @@ All database access follows these security principles:
 - Response: JSON with error details
 - Logs: Detailed error information
 
+## Donor Request Feature Security
+
+### Overview
+The Donor Request feature allows users to submit requests to become donors. This section outlines the security measures implemented for this feature.
+
+### Security Measures
+
+1. **Authentication & Authorization**
+   - Only authenticated users can submit donor requests
+   - Users can only view their own requests (unless they have admin privileges)
+   - Role-based access control for admin actions
+
+2. **Input Validation**
+   - Server-side validation of all form inputs
+   - Strong typing with Zod schema validation
+   - Sanitization of user inputs
+
+3. **Rate Limiting**
+   - 5 requests per hour per user for donor request submissions
+   - Implemented using a sliding window algorithm
+   - Returns appropriate rate limit headers
+
+4. **CSRF Protection**
+   - All form submissions require a valid CSRF token
+   - Tokens are validated on the server side
+   - Secure cookie settings (HttpOnly, SameSite=Strict)
+
+5. **Audit Logging**
+   - All donor request submissions are logged
+   - Logs include user ID, timestamp, and request metadata
+   - Security events are recorded in the security_logs table
+
+6. **Data Protection**
+   - Sensitive data is encrypted at rest
+   - Database fields follow the principle of least privilege
+   - PII is properly handled and protected
+
+### Implementation Details
+
+- **API Endpoint**: `POST /api/donor-request`
+- **Rate Limiting**: 5 requests/hour per user
+- **Required Permissions**: Authenticated user
+- **Data Validation**: Server-side validation using Zod
+- **Error Handling**: Detailed error messages for client, generic messages for production
+
 ## Implementation Gaps
 
-1. **Distributed Rate Limiting**:
-   - Current implementation uses in-memory store
-   - Not suitable for horizontal scaling
-   - **Recommendation**: Implement Redis-based rate limiting
-
-2. **Security Event Monitoring**:
-   - Basic logging is implemented
-   - No real-time alerting
-   - **Recommendation**: Integrate with monitoring solution
-
-3. **Device Fingerprinting**:
-   - Basic implementation exists
-   - Could be enhanced with more device attributes
-   - **Recommendation**: Implement more robust device fingerprinting
-
-4. **Session Management**:
-   - Basic session management is implemented
-   - No idle timeout enforcement
+1. **Distributed Rate Limiting**: The current implementation uses in-memory rate limiting which doesn't scale across multiple server instances.
+2. **Advanced Authentication Methods**: Limited support for MFA, biometrics, or device verification.
+3. **Security Monitoring**: Basic logging is in place but lacks integration with SIEM systems.
+4. **Automated Security Testing**: No automated security scanning in the CI/CD pipeline.
+5. **Compliance Features**: Limited built-in support for compliance standards (GDPR, HIPAA, etc.).
    - **Recommendation**: Implement session timeout policies
 
 ## Future Work

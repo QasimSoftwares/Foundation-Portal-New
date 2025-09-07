@@ -94,11 +94,11 @@ function SignUpContent() {
 
   return (
     <ErrorBoundary FallbackComponent={ErrorFallback}>
-      <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-4 py-8 sm:px-6 lg:px-8">
-        <div className="w-full max-w-md space-y-6">
+      <div className="flex flex-col items-center justify-start px-4 py-6 sm:px-6 lg:px-8">
+        <div className="w-full max-w-md space-y-4 mt-8">
           {/* Logo and Welcome Message */}
-          <div className="flex flex-col items-center space-y-4">
-            <div className="w-24 h-24 relative">
+          <div className="text-center">
+            <div className="w-20 h-20 relative mx-auto">
               <Image
                 src="/logo.png"
                 alt="Family And Fellows Foundation Logo"
@@ -108,23 +108,20 @@ function SignUpContent() {
                 className="w-full h-full object-contain"
               />
             </div>
-            <h1 className="text-2xl font-bold text-gray-900 text-center">
-              Welcome to Family And Fellows Foundation Portal
+            <h1 className="mt-4 text-2xl font-bold text-gray-900">
+              Create your account
             </h1>
+            <p className="mt-1 text-sm text-gray-600">
+              Join our community today
+            </p>
           </div>
-          
-          <div className="bg-white/90 backdrop-blur-sm p-8 rounded-xl shadow-xl border border-gray-100">
-            <div className="text-center mb-6">
-              <h2 className="text-2xl font-bold text-gray-900">Create your account</h2>
-              <p className="mt-2 text-sm text-gray-600">Join our community today</p>
-            </div>
 
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                <div className="space-y-4">
-                  <FormField
-                    control={form.control}
-                    name="fullName"
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <div className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="fullName"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Full Name</FormLabel>
@@ -251,34 +248,32 @@ function SignUpContent() {
                   )}
                 />
 
-                  <div className="pt-4">
-                    <Button
-                      type="submit"
-                      className="w-full bg-brand-blue hover:bg-blue-700 transition-colors duration-200"
-                      disabled={isLoading}
-                      suppressHydrationWarning
-                    >
-                      {isLoading ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Creating account...
-                        </>
-                      ) : (
-                        'Create Account'
-                      )}
-                    </Button>
-                  </div>
-                  
-                  <p className="mt-4 text-center text-sm text-gray-600">
-                    Already have an account?{' '}
-                    <Link href="/signin" className="font-medium text-brand-blue hover:text-blue-700 transition-colors duration-200">
-                      Sign in here
-                    </Link>
-                  </p>
+                <div className="pt-4">
+                  <Button
+                    type="submit"
+                    className="w-full bg-brand-blue hover:bg-blue-700 transition-colors duration-200"
+                    disabled={isLoading}
+                    suppressHydrationWarning
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Creating account...
+                      </>
+                    ) : (
+                      'Create Account'
+                    )}
+                  </Button>
                 </div>
-              </form>
-            </Form>
-          </div>
+                <p className="text-center text-sm text-gray-600">
+                  Already have an account?{' '}
+                  <Link href="/signin" className="font-medium text-brand-blue hover:text-blue-700 transition-colors duration-200">
+                    Sign in here
+                  </Link>
+                </p>
+              </div>
+            </form>
+          </Form>
         </div>
       </div>
     </ErrorBoundary>

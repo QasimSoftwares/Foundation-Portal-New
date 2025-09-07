@@ -115,7 +115,7 @@ async function handleRequest(request: NextRequest) {
     // Apply security headers
     applySecurityHeaders(response);
 
-    // Check rate limiting
+    // Check rate limiting for non-public routes
     if (!isPublicRoute(pathname)) {
       const rateLimitResult = rateLimit(request);
       if (rateLimitResult.isRateLimited) {
@@ -123,7 +123,12 @@ async function handleRequest(request: NextRequest) {
       }
     }
 
-    // Create Supabase client
+    // Skip session check for public routes
+    if (isPublicRoute(pathname)) {
+      return response;
+    }
+
+    // Create Supabase client with proper cookie handling
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -141,6 +146,7 @@ async function handleRequest(request: NextRequest) {
               sameSite: 'lax',
               secure: process.env.NODE_ENV === 'production',
               httpOnly: true,
+              maxAge: 0,
             });
           },
           remove(name: string, options: any) {
@@ -159,7 +165,7 @@ async function handleRequest(request: NextRequest) {
       }
     );
 
-    // Get session
+    // Get session once
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     
     if (sessionError) {
@@ -167,12 +173,22 @@ async function handleRequest(request: NextRequest) {
       return new NextResponse('Internal Server Error', { status: 500 });
     }
 
-    // Handle authentication
-    if (isProtectedRoute(pathname) && !session) {
-      const redirectUrl = new URL('/signin', request.url);
-      redirectUrl.searchParams.set('redirectTo', pathname);
-      logger.info('Redirecting to signin', { pathname, reason: 'unauthenticated' });
-      return NextResponse.redirect(redirectUrl);
+    // Check if user is authenticated for protected routes
+    if (isProtectedRoute(pathname) || isAdminRoute(pathname)) {
+      if (!session) {
+        // For API routes, return 401 instead of redirecting
+        if (pathname.startsWith('/api/')) {
+          return new NextResponse(
+            JSON.stringify({ error: 'Unauthorized' }),
+            { status: 401, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        // For pages, redirect to sign-in with the current path as the return URL
+        const signInUrl = new URL('/signin', request.url);
+        signInUrl.searchParams.set('callbackUrl', pathname);
+        return NextResponse.redirect(signInUrl);
+      }
     }
 
     // Handle admin routes

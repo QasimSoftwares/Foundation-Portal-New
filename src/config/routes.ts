@@ -1,7 +1,7 @@
 // Route configurations for middleware
 type PublicExactRoutes = '/' | '/api/health' | '/api/auth/csrf-token';
 type PublicStartsWith = '/_next' | '/static' | '/api/auth/' | '/auth/' | '/signin' | '/signup' | '/forgot-password' | '/reset-password' | '/verify-email';
-type ProtectedStartsWith = '/dashboard' | '/api/dashboard' | '/profile' | '/api/profile' | '/settings' | '/api/settings';
+type ProtectedStartsWith = '/dashboard' | '/api/dashboard' | '/profile' | '/api/profile' | '/settings' | '/api/settings' | '/donor-request' | '/api/donor-request';
 type SensitiveExactRoutes = '/api/auth/signin' | '/api/auth/signup' | '/api/auth/forgot-password' | '/api/auth/reset-password' | '/api/auth/verify-email' | '/api/auth/change-password';
 type AdminStartsWith = '/admin' | '/api/admin';
 
@@ -30,7 +30,9 @@ export const ROUTE_CONFIG = {
       '/profile',
       '/api/profile',
       '/settings',
-      '/api/settings'
+      '/api/settings',
+      '/donor-request',
+      '/api/donor-request'
     ]
   },
   

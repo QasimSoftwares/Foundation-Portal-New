@@ -1,15 +1,12 @@
-import { Metadata } from 'next';
+'use client';
+
 import { Inter } from 'next/font/google';
 import { cn } from '@/lib/utils';
 import { Suspense } from 'react';
 import { Home, User, Settings, Loader2 } from 'lucide-react';
+import { SignOutButton } from '@/components/auth/sign-out-button';
 
 const inter = Inter({ subsets: ['latin'] });
-
-export const metadata: Metadata = {
-  title: 'Dashboard - FPN',
-  description: 'FPN Dashboard',
-};
 
 export default function DashboardLayout({
   children,
@@ -23,22 +20,30 @@ export default function DashboardLayout({
           <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
         </div>
       }>
-        {/* Add your dashboard layout structure here */}
-        <div className="flex">
+        <div className="flex min-h-screen">
           {/* Sidebar */}
-          <aside className="w-64 bg-white shadow-lg h-screen sticky top-0">
-            <div className="p-4">
-              <h1 className="text-xl font-bold text-blue-600">FPN</h1>
+          <aside className="w-64 bg-white shadow-lg h-screen sticky top-0 flex flex-col">
+            <div className="p-4 border-b">
+              <h1 className="text-xl font-bold text-blue-600">FPN Portal</h1>
             </div>
-            <nav className="mt-6">
-              <NavItem href="/dashboard" icon="dashboard">Dashboard</NavItem>
-              <NavItem href="/profile" icon="user">Profile</NavItem>
-              <NavItem href="/settings" icon="settings">Settings</NavItem>
+            <nav className="flex-1 overflow-y-auto py-4">
+              <NavItem href="/dashboard" icon="dashboard">
+                Dashboard
+              </NavItem>
+              <NavItem href="/profile" icon="user">
+                My Profile
+              </NavItem>
+              <NavItem href="/settings" icon="settings">
+                Settings
+              </NavItem>
             </nav>
+            <div className="p-4 border-t">
+              <SignOutButton />
+            </div>
           </aside>
           
           {/* Main content */}
-          <main className="flex-1 p-8">
+          <main className="flex-1 p-6 overflow-y-auto">
             {children}
           </main>
         </div>

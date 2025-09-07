@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useState } from 'react';
+import { supabase } from '@/lib/supabase/client';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { fetchWithCSRF } from '@/lib/http/csrf-interceptor';
@@ -107,15 +108,25 @@ function SignInContent() {
         }
       }
       
-      console.log('Sign in successful, redirecting...', { callbackUrl });
+      console.log('Sign in successful, setting client session...');
       // Show success message
       toast.success('You have been signed in successfully');
 
-      // Add a small delay to ensure toast is visible
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Force a full page reload to ensure all session data is properly loaded
-      // This is important for Next.js to properly handle the authenticated state
+      // Ensure the browser-side Supabase client has a session
+      const sessionTokens = (responseData as any)?.session;
+      if (sessionTokens?.access_token && sessionTokens?.refresh_token) {
+        const { error: setSessionError } = await supabase.auth.setSession({
+          access_token: sessionTokens.access_token,
+          refresh_token: sessionTokens.refresh_token,
+        });
+        if (setSessionError) {
+          console.error('Failed to set Supabase client session:', setSessionError);
+        }
+      } else {
+        console.warn('No session tokens returned from API to set client session');
+      }
+
+      // Redirect to the intended destination (callbackUrl defaults to /dashboard)
       window.location.href = callbackUrl;
     } catch (error: unknown) {
       console.error('Sign in error:', error);

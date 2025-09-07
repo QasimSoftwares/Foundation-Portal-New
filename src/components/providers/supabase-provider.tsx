@@ -2,12 +2,14 @@
 
 import { createContext, useContext, useEffect, useState } from 'react';
 import { Session, User } from '@supabase/supabase-js';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
 import { useCSRFContext } from '@/providers/CSRFProvider';
+import createClient from '@/lib/supabase/client';
+
+const supabase = createClient();
 
 interface SupabaseContextType {
-  supabase: ReturnType<typeof createClientComponentClient>;
+  supabase: ReturnType<typeof createClient>;
   session: Session | null;
   user: User | null;
   isLoading: boolean;
@@ -21,7 +23,7 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const supabase = createClientComponentClient();
+  // Use the singleton supabase client
   const router = useRouter();
   const { csrfToken } = useCSRFContext();
 
