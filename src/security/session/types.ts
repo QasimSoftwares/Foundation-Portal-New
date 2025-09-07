@@ -38,6 +38,38 @@ export interface SessionManagerConfig {
   cookieDomain?: string;
   secureCookies: boolean;
   sameSite: 'strict' | 'lax' | 'none';
+  
+  /**
+   * Maximum number of concurrent sessions allowed per user
+   * @default 5
+   */
+  maxConcurrentSessions?: number;
+  
+  /**
+   * Session inactivity timeout in seconds
+   * After this period of inactivity, the session will be marked as expired
+   * @default 30 days (30 * 24 * 60 * 60)
+   */
+  sessionInactivityTimeout?: number;
+  
+  /**
+   * Absolute session lifetime in seconds
+   * After this period, the session will expire regardless of activity
+   * @default 90 days (90 * 24 * 60 * 60)
+   */
+  sessionAbsoluteTimeout?: number;
+  
+  /**
+   * Whether to enable device fingerprinting
+   * @default true
+   */
+  enableDeviceFingerprinting?: boolean;
+  
+  /**
+   * Whether to enforce concurrent session limits
+   * @default true
+   */
+  enforceSessionLimits?: boolean;
 }
 
 export interface WithSessionOptions {

@@ -1,23 +1,27 @@
 # Security and Rate Limiting Implementation
 
-This document provides a comprehensive guide to the application's security measures, with a focus on rate limiting, CSRF protection, and other security features.
+This document provides a comprehensive guide to the application's security measures, with a focus on rate limiting, CSRF protection, and session management.
 
 ## Table of Contents
 - [Security Overview](#security-overview)
+- [Session Management](#session-management)
 - [Rate Limiting](#rate-limiting)
   - [Features](#rate-limiting-features)
   - [Configuration](#rate-limiting-configuration)
-  - [Usage](#rate-limiting-usage)
-  - [Best Practices](#rate-limiting-best-practices)
+  - [Rate Limit Tiers](#rate-limit-tiers)
+  - [Implementation Details](#rate-limiting-implementation-details)
 - [CSRF Protection](#csrf-protection)
 - [Security Headers](#security-headers)
 - [Monitoring & Logging](#monitoring--logging)
-- [Implementation Details](#implementation-details)
-- [Troubleshooting](#troubleshooting)
+- [Implementation Gaps](#implementation-gaps)
+- [Future Work](#future-work)
+- [Best Practices](#best-practices)
 
 ## Security Overview
 
 The application implements multiple layers of security:
+- Token-based authentication with access and refresh tokens
+- RPC-based session management with PostgreSQL functions
 - Rate limiting to prevent abuse and DDoS attacks
 - CSRF protection for all state-changing operations
 - Secure headers for modern browser protections

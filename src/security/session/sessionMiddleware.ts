@@ -1,7 +1,8 @@
-import { type NextRequest } from 'next/server';
-import { NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { sessionManager } from './sessionManager';
 import type { SessionUser } from './types';
+import { cookies } from 'next/headers';
+import { supabase } from '@/lib/supabase/client';
 
 // Extend the Request type to include the user
 declare module 'next/server' {
@@ -29,7 +30,7 @@ export async function withSession(
   
   try {
     // Get the user from the session
-    const user = await sessionManager.getUser(req);
+    const user = await sessionManager.getUser();
     
     // Attach user to the request
     req.user = user || undefined;
@@ -43,7 +44,7 @@ export async function withSession(
     }
 
     // Check email verification if required
-    if (requireAuth && requireEmailVerified && user && !user.email_verified) {
+    if (requireAuth && requireEmailVerified && user && !user.email_confirmed_at) {
       return NextResponse.json(
         { error: 'Forbidden', message: 'Email verification required' },
         { status: 403 }
@@ -94,20 +95,46 @@ export async function withSessionRefresh(
   req: NextRequest,
   handler: (req: NextRequest) => Promise<NextResponse>
 ): Promise<NextResponse> {
-  // Clone the response so we can modify it
-  const res = NextResponse.next();
+  // Create a response that we can modify
+  const response = NextResponse.next();
   
   try {
     // Get the refresh token from the request
     const refreshToken = req.cookies.get(sessionManager.getRefreshTokenCookieName())?.value;
     
     if (refreshToken) {
-      // Try to refresh the session
-      const { session, error } = await sessionManager.refreshSession(refreshToken);
+      // Try to refresh the session using Supabase client directly
+      const { data, error } = await supabase.auth.refreshSession({
+        refresh_token: refreshToken
+      });
       
-      if (session && !error) {
-        // Update the cookies with the new session
-        sessionManager.setSessionCookies(res, session);
+      if (data?.session && !error) {
+        const session = data.session;
+        // Set cookies using the session manager's config
+        const cookieOptions = {
+          httpOnly: true,
+          secure: sessionManager.getSecureCookies(),
+          sameSite: sessionManager.getSameSite(),
+          path: '/',
+        };
+
+        // Set access token cookie
+        response.cookies.set({
+          name: sessionManager.getAccessTokenCookieName(),
+          value: session.access_token,
+          ...cookieOptions,
+          maxAge: sessionManager.getAccessTokenMaxAge(),
+        });
+
+        // Set refresh token cookie if available
+        if (session.refresh_token) {
+          response.cookies.set({
+            name: sessionManager.getRefreshTokenCookieName(),
+            value: session.refresh_token,
+            ...cookieOptions,
+            maxAge: sessionManager.getRefreshTokenMaxAge(),
+          });
+        }
         
         // Update the request with the new access token
         req.cookies.set({
@@ -118,13 +145,10 @@ export async function withSessionRefresh(
     }
     
     // Call the handler with the updated request
-    return handler(req);
+    return await handler(req);
   } catch (error) {
     console.error('Session refresh error:', error);
-    // Continue with the original handler even if refresh fails
-    return handler(req);
-  } finally {
-    return res;
+    return response;
   }
 }
 

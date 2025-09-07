@@ -1,8 +1,9 @@
 # Security Implementation
 
-This document outlines the security measures implemented in the application, including CSRF protection, rate limiting, and monitoring.
+This document outlines the security measures implemented in the application, including session management, CSRF protection, rate limiting, and monitoring.
 
 ## Table of Contents
+- [Session Management](#session-management)
 - [CSRF Protection](#csrf-protection)
 - [Rate Limiting](#rate-limiting)
 - [Security Headers](#security-headers)
@@ -11,65 +12,92 @@ This document outlines the security measures implemented in the application, inc
 - [Usage Guidelines](#usage-guidelines)
 - [Testing & Verification](#testing--verification)
 - [Error Handling](#error-handling)
-- [Best Practices](#best-practices)
+- [Implementation Gaps](#implementation-gaps)
+- [Future Work](#future-work)
+
+## Session Management
+
+### Overview
+
+Our application implements a robust session management system with the following security features:
+
+1. **Token-based Authentication**: Uses access and refresh tokens for session management
+2. **RPC-based Session Management**: All session operations go through PostgreSQL RPC functions
+3. **Session Revocation**: Supports explicit session revocation with audit logging
+4. **Security Event Logging**: Comprehensive audit trail of security events
+
+### Implementation Details
+
+- **Session Storage**: Sessions are stored in the `sessions` table with the following schema:
+  - `session_id`: UUID primary key
+  - `user_id`: Reference to auth.users
+  - `device_id`: Optional device identifier
+  - `ua_hash`: Hashed user agent string
+  - `ip`: Client IP address
+  - `created_at`: Session creation timestamp
+  - `last_seen_at`: Last activity timestamp
+  - `revoked_at`: When the session was revoked (if applicable)
+  - `revoked_reason`: Reason for revocation
+
+- **Refresh Tokens**: Stored in the `refresh_tokens` table with:
+  - `refresh_token_id`: UUID primary key
+  - `user_id`: Reference to auth.users
+  - `token`: Hashed refresh token
+  - `created_at`: Token creation timestamp
+  - `expires_at`: Token expiration timestamp
+  - `revoked`: Boolean flag for token revocation
+  - `ip_address`: Client IP address
+  - `user_agent`: Client user agent
+  - `session_id`: Reference to sessions table
+
+### Configuration
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `accessTokenCookieName` | `sb-access-token` | Name of the access token cookie |
+| `refreshTokenCookieName` | `sb-refresh-token` | Name of the refresh token cookie |
+| `accessTokenMaxAge` | 1 hour | Access token lifetime in seconds |
+| `refreshTokenMaxAge` | 7 days | Refresh token lifetime in seconds |
+| `secureCookies` | `true` in production | Only send cookies over HTTPS |
+| `sameSite` | `lax` | Cookie SameSite attribute |
 
 ## CSRF Protection
 
 ### Overview
 
-We've implemented a robust, centralized CSRF protection system that automatically handles token generation, validation, and rotation. The system is designed to be secure by default while remaining easy to use.
+Implements a robust CSRF protection system with the following features:
 
-### How It Works
+1. **Token Generation**: Uses cryptographically secure random bytes (32 bytes/256 bits)
+2. **Token Storage**: HTTP-only, secure, SameSite=strict cookies
+3. **Token Validation**: Constant-time comparison to prevent timing attacks
+4. **Token Rotation**: Automatic rotation on sensitive operations
 
-1. **Token Generation & Management**:
-   - Tokens are generated using Node.js `crypto.randomBytes` for cryptographically secure randomness
-   - Stored in HTTP-only, secure, same-site strict cookies named `sb-csrf-token`
-   - Automatically managed by the centralized CSRF interceptor
-   - Token rotation occurs after sensitive operations
+### Implementation Details
 
-2. **Centralized Protection**:
-   - All API routes are automatically protected by default via middleware
-   - Non-GET/HEAD/OPTIONS requests require a valid CSRF token
-   - Token must be provided in the `X-CSRF-Token` header
-   - The `fetchWithCSRF` wrapper automatically handles token management
+- **Token Generation**: Uses Web Crypto API for secure random token generation
+- **Token Storage**: Stored in `sb-csrf-token` cookie with the following attributes:
+  - `httpOnly: true`
+  - `secure: true` (in production)
+  - `sameSite: 'strict'`
+  - `maxAge: 86400` (24 hours)
+- **Token Validation**:
+  - Required for all non-GET/HEAD/OPTIONS requests
+  - Must be provided in the `X-CSRF-Token` header
+  - Validated against the token stored in the session cookie
 
-3. **Implementation Details**:
-   - **Middleware**: `withCSRFProtection` wraps API route handlers
-   - **Frontend**: `fetchWithCSRF` wrapper handles token management
-   - **Token Rotation**: Automatic after sensitive operations (login, password reset, etc.)
-   - **Error Handling**: Detailed logging of CSRF validation failures
+### Sensitive Endpoints (Token Rotation)
 
-4. **Sensitive Endpoints (Token Rotation)**:
-   - `/api/auth/signin`
-   - `/api/auth/signup`
-   - `/api/auth/change-password`
-   - `/api/auth/reset-password`
-   - `/api/auth/verify-email`
-
-### Usage Guidelines
-
-#### Frontend
-
-Use the `fetchWithCSRF` wrapper for all API calls that modify state:
-
-```typescript
-import { fetchWithCSRF } from '@/lib/http/csrf-interceptor';
-
-// In your component or utility
-const response = await fetchWithCSRF('/api/endpoint', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(data)
-});
-```
-
-#### API Routes
-
-All API routes are automatically protected by the middleware. No additional code is needed in individual route handlers.
+- `/api/auth/signin`
+- `/api/auth/signup`
+- `/api/auth/change-password`
+- `/api/auth/reset-password`
+- `/api/auth/verify-email`
 
 ## Rate Limiting
 
 ### Configuration
+
+Implemented in `src/middleware.ts` with in-memory rate limiting (Redis recommended for production).
 
 | Endpoint | Limit | Window | Description |
 |----------|-------|--------|-------------|
@@ -79,26 +107,19 @@ All API routes are automatically protected by the middleware. No additional code
 | `/api/auth/reset-password` | 5 | 3600s | Password resets |
 | `/api/auth/verify-email` | 5 | 3600s | Email verification |
 | `/api/admin/*` | 30 | 60s | Admin API endpoints |
-| `/api/export` | 5 | 300s | Data export endpoints |
-| `/api/import` | 2 | 60s | Data import endpoints |
-| `/api/*` | 10 | 60s | Default API rate limit |
-| Default | 10 | 60s | Catch-all rate limit |
+| Default | 10 | 60s | Default API rate limit |
 
-> **Note**: Rate limits are applied per IP address and user agent combination to prevent abuse while minimizing false positives.
+### Rate Limit Key Generation
 
-### IP-based Rate Limiting with User-Agent Binding
-
-Rate limiting is enforced based on a combination of:
+Rate limits are tracked by a combination of:
 - Client IP address
-- User-Agent header (first 16 characters of base64-encoded)
+- User-Agent header (first 16 chars of base64-encoded)
 - Request path
-
-This provides better protection against distributed attacks while minimizing false positives.
 
 ### Response Headers
 - `X-RateLimit-Limit`: Maximum requests allowed in the window
 - `X-RateLimit-Remaining`: Remaining requests in the current window
-- `X-RateLimit-Reset`: Unix timestamp when the limit resets
+- `X-RateLimit-Reset`: Unix timestamp when the limit resets (milliseconds)
 - `Retry-After`: Seconds to wait before retrying (when rate limited)
 
 ## Security Headers
@@ -109,11 +130,7 @@ All responses include the following security headers:
 - `X-XSS-Protection: 1; mode=block`
 - `Referrer-Policy: strict-origin-when-cross-origin`
 - `Permissions-Policy`: Restricts access to sensitive browser features
-- `Content-Security-Policy`: Strict policy with safe defaults
-- `X-RateLimit-Limit`: Maximum requests allowed in the window
-- `X-RateLimit-Remaining`: Remaining requests in the current window
-- `X-RateLimit-Reset`: Unix timestamp when the limit resets
-- `Retry-After`: Seconds to wait before retrying (when rate limited)
+- `Content-Security-Policy`: Default policy with safe defaults
 
 ## Monitoring & Logging
 
@@ -124,6 +141,187 @@ All security-relevant events are logged with the following information:
 - Severity level (info, warn, error)
 - Timestamp
 - Request details (path, method, IP, user agent)
+- Additional context (error details, user ID, etc.)
+
+### Log Storage
+- **Development**: Logs are output to the console
+- **Production**: Should be configured to send logs to a centralized logging service
+  (e.g., Sentry, Datadog, ELK stack)
+
+## Implementation Details
+
+### Middleware
+
+Security middleware is implemented in `src/middleware.ts` and includes:
+- CSRF protection
+- Rate limiting
+- Request validation
+- Security headers
+- Error handling
+
+### Session Management
+
+Session management is handled by `SessionManager` class with the following features:
+- Token-based authentication
+- Refresh token rotation
+- Session revocation
+- Device tracking
+- Security event logging
+
+### Database Access
+
+All database access follows these security principles:
+1. **RPC-First**: Prefer RPC functions over direct table access
+2. **Row-Level Security (RLS)**: Enabled on all tables
+3. **Least Privilege**: Service roles have minimal required permissions
+4. **Input Validation**: All inputs are validated before processing
+
+## Usage Guidelines
+
+### Frontend
+
+1. **API Requests**:
+   - Use the `fetchWithCSRF` wrapper for all API calls
+   - Handle 401/403 responses by redirecting to login
+   - Implement proper error handling for rate limits
+
+2. **Authentication**:
+   - Store tokens in HTTP-only cookies
+   - Implement proper logout functionality
+   - Handle token refresh transparently
+
+### Backend
+
+1. **Route Protection**:
+   - All API routes are protected by default
+   - Use middleware for role-based access control
+   - Implement proper error handling and logging
+
+2. **Rate Limiting**:
+   - Configure appropriate limits for each endpoint
+   - Monitor rate limit hits and adjust as needed
+   - Implement exponential backoff for clients
+
+## Testing & Verification
+
+### Unit Tests
+
+- CSRF token generation and validation
+- Rate limiting logic
+- Session management
+- Error handling
+
+### Integration Tests
+
+- Authentication flow
+- Session management
+- Rate limiting
+- Error conditions
+
+### Manual Testing
+
+1. **CSRF Protection**:
+   - Verify token is required for POST/PUT/DELETE requests
+   - Test token rotation on sensitive operations
+   - Verify invalid tokens are rejected
+
+2. **Rate Limiting**:
+   - Test hitting rate limits
+   - Verify proper headers are returned
+   - Test different rate limits for different endpoints
+
+3. **Session Management**:
+   - Test concurrent session limits
+   - Verify session revocation
+   - Test token refresh flow
+
+## Error Handling
+
+### Rate Limit Errors
+- Status: 429 Too Many Requests
+- Headers: `Retry-After`, `X-RateLimit-*`
+- Response: JSON with error details and retry information
+
+### CSRF Errors
+- Status: 403 Forbidden
+- Response: JSON with error details
+- Logs: Detailed error information
+
+### Authentication Errors
+- Status: 401 Unauthorized / 403 Forbidden
+- Response: JSON with error details
+- Logs: Detailed error information
+
+## Implementation Gaps
+
+1. **Distributed Rate Limiting**:
+   - Current implementation uses in-memory store
+   - Not suitable for horizontal scaling
+   - **Recommendation**: Implement Redis-based rate limiting
+
+2. **Security Event Monitoring**:
+   - Basic logging is implemented
+   - No real-time alerting
+   - **Recommendation**: Integrate with monitoring solution
+
+3. **Device Fingerprinting**:
+   - Basic implementation exists
+   - Could be enhanced with more device attributes
+   - **Recommendation**: Implement more robust device fingerprinting
+
+4. **Session Management**:
+   - Basic session management is implemented
+   - No idle timeout enforcement
+   - **Recommendation**: Implement session timeout policies
+
+## Future Work
+
+1. **Enhanced Security Headers**:
+   - Implement Content Security Policy (CSP) reporting
+   - Add Expect-CT header
+   - Implement Feature Policy
+
+2. **Advanced Rate Limiting**:
+   - Implement adaptive rate limiting
+   - Add IP reputation system
+   - Implement global rate limits
+
+3. **Security Monitoring**:
+   - Implement real-time alerting
+   - Add anomaly detection
+   - Implement audit logging
+
+4. **Authentication Enhancements**:
+   - Implement multi-factor authentication
+   - Add device verification
+   - Implement passwordless login
+
+5. **Compliance**:
+   - GDPR compliance
+   - CCPA compliance
+   - SOC 2 compliance
+
+## Best Practices
+
+1. **Secure Development**:
+   - Regular dependency updates
+   - Security code reviews
+   - Automated security testing
+
+2. **Monitoring**:
+   - Monitor security events
+   - Set up alerts for suspicious activity
+   - Regular security audits
+
+3. **Incident Response**:
+   - Documented incident response plan
+   - Regular security training
+   - Post-incident reviews
+
+4. **Documentation**:
+   - Keep security documentation up to date
+   - Document security decisions
+   - Maintain runbooks for common issues
 - Additional context-specific metadata
 
 ### Log Storage

@@ -10,14 +10,26 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        brand: {
+          blue: '#004aad',
+          green: '#00a86b',
+          yellow: '#ffc72c',
+        },
         primary: {
-          DEFAULT: 'hsl(222.2, 47.4%, 11.2%)',
-          foreground: 'hsl(210, 40%, 98%)',
+          DEFAULT: '#004aad', // Brand blue as primary
+          foreground: '#ffffff',
         },
         secondary: {
-          DEFAULT: 'hsl(210, 40%, 96.1%)',
-          foreground: 'hsl(222.2, 47.4%, 11.2%)',
+          DEFAULT: '#00a86b', // Brand green as secondary
+          foreground: '#ffffff',
         },
+        accent: {
+          DEFAULT: '#ffc72c', // Brand yellow as accent
+          foreground: '#000000',
+        },
+      },
+      backgroundImage: {
+        'auth-pattern': "url('/auth-pattern.svg')",
       },
     },
   },

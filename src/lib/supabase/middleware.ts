@@ -215,14 +215,18 @@ export const requireAdmin = (handler: (req: NextRequest) => Promise<NextResponse
       return NextResponse.redirect(new URL('/signin', req.url));
     }
 
-    // Check if user has admin role
-    const { data: userRole } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', session.user.id)
-      .single();
-
-    if (userRole?.role !== 'admin') {
+    // Check if user has admin role using RPC
+    const { data: adminCheck, error: adminCheckError } = await supabase
+      .rpc('check_user_admin', { p_user_id: session.user.id });
+      
+    // Get the first result (if any)
+    const isAdmin = Array.isArray(adminCheck) ? adminCheck[0]?.is_admin === true : false;
+    
+    if (adminCheckError || !isAdmin) {
+      logger.warn('Admin access denied', { 
+        userId: session.user.id, 
+        error: adminCheckError?.message 
+      });
       return new NextResponse('Forbidden', { status: 403 });
     }
 
@@ -241,15 +245,23 @@ export const requirePermission = (permission: string) => {
         return NextResponse.redirect(new URL('/signin', req.url));
       }
 
-      // Check if user has the required permission
-      const { data: userPermission } = await supabase
-        .from('user_permissions')
-        .select('permission')
-        .eq('user_id', session.user.id)
-        .eq('permission', permission)
-        .single();
-
-      if (!userPermission) {
+      // Check if user has the required permission using RPC
+      const { data: permissionCheck, error: permCheckError } = await supabase
+        .rpc('check_user_permission', { 
+          p_user_id: session.user.id,
+          p_permission: permission 
+        });
+        
+      // Get the first result (if any)
+      const hasPermission = Array.isArray(permissionCheck) ? 
+        permissionCheck[0]?.has_permission === true : false;
+      
+      if (permCheckError || !hasPermission) {
+        logger.warn('Permission check failed', { 
+          userId: session.user.id, 
+          permission,
+          error: permCheckError?.message 
+        });
         return new NextResponse('Forbidden', { status: 403 });
       }
 

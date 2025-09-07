@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { SupabaseProvider } from '@/components/providers/supabase-provider';
 import { ToastProvider } from '@/components/providers/toast-provider';
+import { CSRFProvider } from '@/providers/CSRFProvider';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -19,11 +20,13 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
-        <SupabaseProvider>
-          <ToastProvider>
-            {children}
-          </ToastProvider>
-        </SupabaseProvider>
+        <CSRFProvider>
+          <SupabaseProvider>
+            <ToastProvider>
+              {children}
+            </ToastProvider>
+          </SupabaseProvider>
+        </CSRFProvider>
       </body>
     </html>
   );

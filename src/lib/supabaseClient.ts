@@ -21,52 +21,60 @@ export function createClient() {
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: false,
+      flowType: 'pkce',
     },
   });
 }
 
 // Server client for server components and API routes
-export async function createServerClient() {
-  const cookieStore = await cookies();
+export function createServerClient() {
+  // In Next.js 14+, we'll use the cookies API directly in our route handlers
+  // This client will be used in server components and API routes
   
   return createServerComponent<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      // Required cookies object with get/set/remove methods
       cookies: {
         get(name: string) {
-          return cookieStore.get(name)?.value;
+          // This will be handled by the framework
+          return undefined;
         },
         set(name: string, value: string, options: any) {
-          try {
-            // In Next.js 14+, cookies are set via the response headers
-            // The actual cookie setting should be handled by the response object
-            // in the API route or server component
-            // We'll just return the cookie data to be set by the response
-            return { name, value, ...options };
-          } catch (error) {
-            console.error('Error setting cookie:', error);
-            return null;
-          }
+          // This will be handled by the framework
+          return { name, value, ...options };
         },
-        remove(name: string, options: any) {
-          try {
-            // Return cookie removal data to be set by the response
-            return { 
-              name, 
-              value: '', 
-              ...options, 
-              path: '/',
-              maxAge: 0,
-              sameSite: 'lax',
-              secure: process.env.NODE_ENV === 'production',
-              httpOnly: true
-            };
-          } catch (error) {
-            console.error('Error removing cookie:', error);
-            return null;
-          }
+        remove(name: string, options: any = {}) {
+          // This will be handled by the framework
+          return { 
+            name, 
+            value: '', 
+            ...options, 
+            maxAge: 0,
+            path: '/',
+            sameSite: 'lax' as const,
+            secure: process.env.NODE_ENV === 'production',
+            httpOnly: true
+          };
         },
+      },
+      // These options are passed to the underlying Supabase client
+      options: {
+        auth: {
+          flowType: 'pkce',
+          detectSessionInUrl: false,
+          autoRefreshToken: true,
+          persistSession: true,
+        },
+      },
+      // Cookie options
+      cookieOptions: {
+        name: 'sb-auth-token',
+        lifetime: 60 * 60 * 24 * 7, // 7 days
+        domain: '',
+        path: '/',
+        sameSite: 'lax',
       },
     }
   );

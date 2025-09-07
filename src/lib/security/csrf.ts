@@ -1,4 +1,3 @@
-import { randomBytes, timingSafeEqual } from 'crypto';
 import { serialize } from 'cookie';
 import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
@@ -36,7 +35,12 @@ type CSRFToken = {
  * Generate a new CSRF token
  */
 export function generateCSRFToken(): string {
-  return randomBytes(CSRF_CONFIG.TOKEN_BYTES).toString('hex');
+  // Use Web Crypto API (Edge/runtime compatible)
+  const bytes = new Uint8Array(CSRF_CONFIG.TOKEN_BYTES);
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 /**
@@ -87,15 +91,18 @@ export function validateCSRFToken(
   }
 
   try {
-    // Use timing-safe comparison to prevent timing attacks
-    const requestTokenBuffer = Buffer.from(requestToken, 'hex');
-    const sessionTokenBuffer = Buffer.from(sessionToken, 'hex');
-    
-    return (
-      requestTokenBuffer.length === CSRF_CONFIG.TOKEN_BYTES &&
-      sessionTokenBuffer.length === CSRF_CONFIG.TOKEN_BYTES &&
-      timingSafeEqual(requestTokenBuffer, sessionTokenBuffer)
-    );
+    // Constant-time comparison without Node's timingSafeEqual
+    if (
+      requestToken.length !== CSRF_CONFIG.TOKEN_BYTES * 2 ||
+      sessionToken.length !== CSRF_CONFIG.TOKEN_BYTES * 2
+    ) {
+      return false;
+    }
+    let diff = 0;
+    for (let i = 0; i < requestToken.length; i++) {
+      diff |= requestToken.charCodeAt(i) ^ sessionToken.charCodeAt(i);
+    }
+    return diff === 0;
   } catch (e) {
     return false;
   }
@@ -128,9 +135,21 @@ function shouldRotateToken(request: NextRequest): boolean {
  */
 export function withCSRFProtection(handler: (req: NextRequest) => Promise<NextResponse>) {
   return async (request: NextRequest) => {
-    // Skip CSRF check for safe methods and public routes
+    // For safe methods, still ensure CSRF cookie exists so future POSTs have a token
     if (['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
-      return handler(request);
+      const response = NextResponse.next();
+      const sessionToken = request.cookies.get(CSRF_CONFIG.COOKIE_NAME)?.value || null;
+      if (!sessionToken) {
+        const newToken = generateAndSetCSRFToken(response);
+        response.headers.set(CSRF_CONFIG.NEW_TOKEN_HEADER, newToken);
+      }
+      // Process the request and merge headers so Set-Cookie is applied
+      return handler(request).then((handlerResponse) => {
+        for (const [key, value] of response.headers.entries()) {
+          if (value) handlerResponse.headers.set(key, value);
+        }
+        return handlerResponse;
+      });
     }
 
     const response = NextResponse.next();
@@ -155,7 +174,7 @@ export function withCSRFProtection(handler: (req: NextRequest) => Promise<NextRe
             status: 403, 
             headers: { 
               'Content-Type': 'application/json',
-              'X-Request-Id': crypto.randomUUID(),
+              'X-Request-Id': (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`),
               'X-CSRF-Error': 'invalid_token'
             } 
           }
@@ -189,7 +208,7 @@ export function withCSRFProtection(handler: (req: NextRequest) => Promise<NextRe
           status: 500, 
           headers: { 
             'Content-Type': 'application/json',
-            'X-Request-Id': crypto.randomUUID()
+            'X-Request-Id': (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`)
           } 
         }
       );

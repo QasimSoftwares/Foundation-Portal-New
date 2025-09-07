@@ -177,16 +177,19 @@ async function handleRequest(request: NextRequest) {
 
     // Handle admin routes
     if (isAdminRoute(pathname) && session) {
-      const { data: user, error: userError } = await supabase
-        .from('user_roles')
-        .select('is_admin')
-        .eq('user_id', session.user.id)
-        .single();
+      // Use RPC to check admin status
+      const { data: adminCheck, error: adminCheckError } = await supabase.rpc('is_user_admin', { 
+        p_user_id: session.user.id 
+      });
+      
+      // Get the first result (if any)
+      const isAdmin = Array.isArray(adminCheck) ? adminCheck[0]?.is_admin : false;
 
-      if (userError || !user?.is_admin) {
+      if (adminCheckError || !isAdmin) {
         logger.warn('Unauthorized admin access attempt', { 
           userId: session.user.id, 
-          pathname 
+          pathname,
+          error: adminCheckError?.message
         });
         return new NextResponse('Forbidden', { status: 403 });
       }

@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from '@/components/ui/form';
 import { toast } from 'sonner';
-import { Loader2, Mail, Lock } from 'lucide-react';
+import { Loader2, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import { ErrorBoundary } from 'react-error-boundary';
 import { ErrorFallback } from '@/components/error/ErrorFallback';
@@ -25,6 +25,8 @@ type SignInFormData = z.infer<typeof signInSchema>;
 
 function SignInContent() {
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams?.get('callbackUrl') || '/dashboard';
@@ -41,6 +43,7 @@ function SignInContent() {
 
   const onSubmit = async (data: SignInFormData) => {
     setIsLoading(true);
+    setLoginError(null); // Clear previous errors
     console.log('Starting sign in...', { email: data.email });
     
     try {
@@ -77,7 +80,30 @@ function SignInContent() {
             `Too many attempts. ${retryAfter ? `Please try again in ${retryAfter} seconds.` : 'Please try again later.'}`
           );
         } else {
-          throw new Error(responseData.error || `Sign in failed with status ${response.status}`);
+          // Handle different error cases with user-friendly messages
+          const errorMessage = responseData?.error?.message || 'Sign in failed';
+          const errorCode = responseData?.error?.code || 'UNKNOWN_ERROR';
+          
+          // Map error codes to user-friendly messages
+          const errorMessages: Record<string, string> = {
+            'INVALID_CREDENTIALS': 'Email or password is incorrect. Please try again.',
+            'EMAIL_NOT_CONFIRMED': 'Please verify your email before signing in. Check your inbox for a verification link.',
+            'INVALID_EMAIL': 'The email address is not valid. Please check and try again.',
+            'WEAK_PASSWORD': 'The password is too weak. It must be at least 6 characters long.',
+            'TOO_MANY_REQUESTS': 'Too many sign-in attempts. Please try again later.',
+            'DEFAULT': 'An error occurred during sign in. Please try again.'
+          };
+          
+          // Get the appropriate error message or fall back to the server message
+          const userFriendlyMessage = errorMessages[errorCode] || errorMessages['DEFAULT'];
+          
+          // Create a new error with the user-friendly message
+          const error = new Error(userFriendlyMessage);
+          // Set the login error state
+          setLoginError(userFriendlyMessage);
+          // Attach the original error code for debugging
+          (error as any).code = errorCode;
+          throw error;
         }
       }
       
@@ -117,142 +143,169 @@ function SignInContent() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-md w-full space-y-8 text-center">
-          <Loader2 className="h-12 w-12 text-indigo-600 animate-spin mx-auto" />
-          <p className="mt-2 text-sm text-gray-600">Signing in...</p>
+      <div className="w-full max-w-[360px] mx-auto">
+        <div className="bg-white p-8 rounded-2xl shadow-lg border border-gray-100">
+          <div className="flex flex-col items-center justify-center space-y-4 h-64">
+            <Loader2 className="h-12 w-12 text-brand-blue animate-spin" />
+            <p className="text-sm text-gray-600">Signing in...</p>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <ErrorBoundary
-      FallbackComponent={ErrorFallback}
-      onReset={() => {
-        form.reset();
-      }}
-    >
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-md w-full space-y-8">
-          <div>
-            <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-              Sign in to your account
-            </h2>
-          </div>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="mt-8 space-y-6">
-              <div className="rounded-md shadow-sm -space-y-px">
-                <FormField
-                  control={form.control}
-                  name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email address</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="email"
-                          autoComplete="email"
-                          placeholder="Enter your email"
-                          {...field}
-                          disabled={isLoading}
-                          suppressHydrationWarning
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Password</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="password"
-                          autoComplete="current-password"
-                          placeholder="Enter your password"
-                          {...field}
-                          disabled={isLoading}
-                          suppressHydrationWarning
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="text-sm">
-                  <Link
-                    href="/forgot-password"
-                    className="font-medium text-indigo-600 hover:text-indigo-500"
-                  >
-                    Forgot your password?
-                  </Link>
-                </div>
-              </div>
-
-              <div>
-                <Button
-                  type="submit"
-                  className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-                  disabled={isLoading}
-                  onClick={() => toast.loading('Signing in...')}
-                  suppressHydrationWarning
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Signing in...
-                    </>
-                  ) : (
-                    'Sign in'
-                  )}
-                </Button>
-              </div>
-            </form>
-          </Form>
-          <div className="mt-6">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300"></div>
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">Or continue with</span>
-              </div>
-            </div>
-
-            <div className="mt-6 grid grid-cols-1 gap-3">
-              <div>
-                <Link
-                  href="/signup"
-                  className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
-                >
-                  Create a new account
-                </Link>
-              </div>
-            </div>
-          </div>
+    <div className="w-full max-w-md mx-auto">
+      <div className="flex flex-col items-center space-y-4 mb-8">
+        <div className="w-24 h-24 relative">
+          <img 
+            src="/logo.png" 
+            alt="Family And Fellows Foundation Logo" 
+            className="w-full h-full object-contain"
+          />
         </div>
+        <h1 className="text-2xl font-bold text-gray-900 text-center">
+          Welcome to Family And Fellows Foundation Portal
+        </h1>
       </div>
-    </ErrorBoundary>
+      <div className="bg-white/90 backdrop-blur-sm p-8 rounded-xl shadow-xl border border-gray-100">
+        <div className="text-center mb-6">
+          <h2 className="text-2xl font-bold text-gray-900">Sign In</h2>
+        </div>
+        
+        {/* Error message display */}
+        {loginError && (
+          <div className="rounded-md bg-red-50 p-4 mb-6">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <p className="text-sm font-medium text-red-800">{loginError}</p>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="mt-8 space-y-6">
+            <div className="space-y-4">
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email address</FormLabel>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                      <FormControl>
+                        <Input
+                          placeholder="name@example.com"
+                          type="email"
+                          className="pl-10"
+                          {...field}
+                        />
+                      </FormControl>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <div className="flex items-center justify-between">
+                      <FormLabel>Password</FormLabel>
+                      <Link
+                        href="/forgot-password"
+                        className="text-sm font-medium text-brand-blue hover:text-blue-700 transition-colors duration-200"
+                      >
+                        Forgot password?
+                      </Link>
+                    </div>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                      <FormControl>
+                        <div className="relative">
+                          <Input
+                            placeholder="••••••••"
+                            type={showPassword ? "text" : "password"}
+                            className="pl-10 pr-10"
+                            autoComplete="current-password"
+                            {...field}
+                          />
+                          <button
+                            type="button"
+                            className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-500"
+                            onClick={() => setShowPassword(!showPassword)}
+                            tabIndex={-1}
+                          >
+                            {showPassword ? (
+                              <EyeOff className="h-5 w-5" />
+                            ) : (
+                              <Eye className="h-5 w-5" />
+                            )}
+                          </button>
+                        </div>
+                      </FormControl>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <div className="mt-6">
+              <Button
+                type="submit"
+                className="w-full py-2.5 text-sm font-medium rounded-lg shadow-sm text-white bg-brand-blue hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-blue/50 disabled:opacity-50 transition-colors duration-200"
+                disabled={isLoading}
+                onClick={() => toast.loading('Signing in...')}
+                suppressHydrationWarning
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Signing in...
+                  </>
+                ) : (
+                  'Sign in'
+                )}
+              </Button>
+            </div>
+            
+            <div className="mt-4 text-center text-sm">
+              Don't have an account?{' '}
+              <Link href="/signup" className="font-medium text-brand-blue hover:text-blue-700 transition-colors duration-200">
+                Sign up
+              </Link>
+            </div>
+          </form>
+        </Form>
+      </div>
+    </div>
   );
 }
 
 // Main page component with Suspense boundary
 function SignInPage() {
   return (
-    <Suspense fallback={
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    }>
-      <SignInContent />
-    </Suspense>
+    <ErrorBoundary
+      FallbackComponent={ErrorFallback}
+      onReset={() => window.location.reload()}
+    >
+      <Suspense fallback={
+        <div className="flex items-center justify-center min-h-screen">
+          <Loader2 className="h-8 w-8 animate-spin" />
+        </div>
+      }>
+        <SignInContent />
+      </Suspense>
+    </ErrorBoundary>
   );
 }
 

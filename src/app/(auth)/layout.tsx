@@ -12,18 +12,7 @@ export default function AuthPagesLayout({
   children: React.ReactNode;
 }) {
   return (
-    <AuthLayout 
-      title="Welcome to FPN"
-      subtitle="Sign in to your account"
-      footerText={
-        <>
-          Don't have an account?{' '}
-          <a href="/signup" className="font-medium text-blue-600 hover:text-blue-500">
-            Sign up
-          </a>
-        </>
-      }
-    >
+    <AuthLayout>
       {children}
     </AuthLayout>
   );

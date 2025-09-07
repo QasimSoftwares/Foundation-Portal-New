@@ -1,103 +1,169 @@
-# Rate Limiting and Security Middleware
+# Rate Limiting Implementation
 
-This document outlines the rate limiting and security middleware implementation for the application.
+This document outlines the rate limiting implementation in the application, which is part of the security middleware.
 
 ## Overview
 
-The application uses a centralized security middleware that combines both CSRF protection and rate limiting. The implementation includes:
+The application implements rate limiting to protect against brute force attacks, denial of service, and API abuse. The current implementation uses an in-memory store with the following characteristics:
 
-1. **Rate Limiting**: Protects against brute force and denial of service attacks
-2. **CSRF Protection**: Prevents cross-site request forgery attacks
-3. **Security Headers**: Adds essential security headers to all responses
+- **In-Memory Store**: Default implementation (suitable for single-instance deployments)
+- **Key Generation**: Combines IP address and User-Agent for client identification
+- **Response Headers**: Includes rate limit information in all responses
+- **Error Handling**: Returns appropriate HTTP status codes and error messages
+- **Fixed Window Algorithm**: Simple but effective for basic protection
 
 ## Configuration
 
-Rate limiting is configured in `src/config/rateLimit.ts` with the following environment variables:
+Rate limiting is configured in `src/middleware.ts` with the following defaults:
 
-- `RATE_LIMIT_ENABLED`: Enable/disable rate limiting (default: `true` in production)
-- `RATE_LIMIT_WINDOW_MS`: Base time window in milliseconds (default: 15 minutes)
-- `RATE_LIMIT_BACKOFF_FACTOR`: Exponential backoff factor (default: 2)
-- `REDIS_URL`: Redis connection string (optional, falls back to in-memory store)
-- `TRUST_PROXY`: Enable if behind a proxy (default: `false`)
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Default Limit | 10 requests | Default limit for all endpoints |
+| Window | 60 seconds | Time window for rate limiting |
+| Auth Endpoints | 5 requests/60s | Stricter limits for authentication |
+| Admin Endpoints | 30 requests/60s | Higher limits for admin operations |
+| Max Window Size | 24 hours | Maximum backoff window |
+| Trust Proxy | false | Enable if behind a reverse proxy |
 
 ## Rate Limit Tiers
 
-Different endpoints have different rate limits:
+### 1. Authentication Endpoints (5 requests/60s)
+- `/api/auth/signin`
+- `/api/auth/signup`
+- `/api/auth/forgot-password`
+- `/api/auth/reset-password`
+- `/api/auth/verify-email`
 
-1. **Public API** (100 requests/minute)
-   - All public API endpoints
-   - Higher limits for general use
+### 2. Admin Endpoints (30 requests/60s)
+- `/api/admin/*`
 
-2. **Authentication** (10 requests/15 minutes)
-   - `/api/auth/signin`
-   - `/api/auth/signup`
-   - Stricter limits to prevent brute force attacks
-
-3. **Sensitive Operations** (5 requests/hour)
-   - `/api/account/change-password`
-   - `/api/account/update-email`
-   - `/api/account/delete`
-   - Very strict limits for sensitive operations
-
-4. **Auth Verification** (3 requests/hour)
-   - `/api/auth/forgot-password`
-   - `/api/auth/reset-password`
-   - `/api/auth/verify-email`
-   - Prevents abuse of verification flows
-
-## Response Headers
-
-The following headers are included in rate-limited responses:
-
-- `X-RateLimit-Limit`: Maximum number of requests allowed in the window
-- `X-RateLimit-Remaining`: Number of requests remaining in the current window
-- `X-RateLimit-Reset`: Timestamp when the rate limit resets (UNIX timestamp in seconds)
-- `Retry-After`: Number of seconds to wait before making another request
-
-## Error Responses
-
-When rate limited, the API returns:
-
-```json
-{
-  "error": "rate_limit_exceeded",
-  "message": "Rate limit exceeded. Please try again later.",
-  "retryAfter": 60
-}
-```
+### 3. Public API (10 requests/60s)
+- All other API endpoints
 
 ## Implementation Details
-
-### Rate Limit Store
-
-- **Production**: Uses Redis for distributed rate limiting
-- **Development**: Falls back to in-memory store (not suitable for production)
 
 ### Rate Limit Key Generation
 
 Rate limits are tracked by a combination of:
-- Client IP address
-- User ID (if authenticated)
+- Client IP address (from `x-real-ip` or `x-forwarded-for` headers if behind proxy)
+- First 16 characters of base64-encoded User-Agent
 - Request path
-- Rate limit type
 
-### Exponential Backoff
+### Response Headers
 
-Repeated violations of rate limits result in exponential backoff, with a maximum backoff period of 24 hours.
+All responses include the following headers:
+
+| Header | Description | Example |
+|--------|-------------|---------|
+| `X-RateLimit-Limit` | Maximum requests allowed in the window | `10` |
+| `X-RateLimit-Remaining` | Remaining requests in the current window | `5` |
+| `X-RateLimit-Reset` | Unix timestamp when the limit resets (milliseconds) | `1620000000000` |
+| `Retry-After` | Seconds to wait before retrying (only on 429) | `30` |
+
+### Error Responses
+
+When rate limited, the API returns:
+
+```http
+HTTP/1.1 429 Too Many Requests
+X-RateLimit-Limit: 5
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1620000000000
+Retry-After: 60
+Content-Type: application/json
+
+{
+  "error": "rate_limit_exceeded",
+  "message": "Too many requests, please try again later.",
+  "retryAfter": 60
+}
+```
+
+## Implementation Gaps
+
+### Current Limitations
+1. **Single-Instance Only**: The in-memory store doesn't work in a distributed environment
+2. **No Persistence**: Rate limit state is lost on server restart
+3. **No IP Whitelisting**: No way to exclude trusted IPs from rate limiting
+4. **Basic Algorithm**: Uses fixed window counter (could be improved with token bucket or sliding window)
+5. **No Request Prioritization**: All requests are treated equally
+
+### Recommended Improvements
+1. **Redis Integration**: For distributed rate limiting
+2. **Configuration Management**: Move configuration to environment variables
+3. **IP Whitelisting**: Add support for trusted IPs
+4. **Advanced Algorithms**: Implement token bucket or sliding window algorithms
+5. **Request Prioritization**: Allow critical requests during high load
 
 ## Testing
 
-To test rate limiting:
+### Unit Tests
+```typescript
+describe('Rate Limiting', () => {
+  it('should generate consistent rate limit keys', () => {
+    // Test key generation logic
+  });
+  
+  it('should enforce rate limits', async () => {
+    // Test rate limit enforcement
+  });
+});
+```
 
-1. Make multiple requests to a protected endpoint
-2. Check the response headers to monitor rate limit status
-3. Verify that the rate limit is enforced correctly
+### Integration Tests
+1. Test rate limit headers in responses
+2. Verify different rate limits for different endpoints
+3. Test concurrent request handling
+4. Verify error responses when rate limited
+
+### Manual Testing
+1. Make requests to a rate-limited endpoint
+2. Verify headers in the response
+3. Test hitting the rate limit
+4. Verify the Retry-After header is set correctly
 
 ## Monitoring
 
-Monitor the following metrics:
-- Rate limit hits
-- Backoff activations
+### Key Metrics to Monitor
+- Rate limit hits per endpoint
+- Top clients hitting rate limits
+- Error rates for 429 responses
+- Response times for rate-limited endpoints
+
+### Logging
+Rate limit events are logged with the following details:
+- Timestamp
+- Client IP
+- User-Agent (truncated)
+- Request path
+- Rate limit status
+- Remaining requests
+- Reset time
+
+## Future Work
+
+### 1. Distributed Rate Limiting
+- [ ] Implement Redis-based rate limiting
+- [ ] Add support for cluster mode
+- [ ] Implement distributed locks for consistency
+
+### 2. Advanced Features
+- [ ] Implement token bucket algorithm
+- [ ] Add support for burst limits
+- [ ] Implement request prioritization
+- [ ] Add support for JWT-based rate limiting
+
+### 3. Configuration
+- [ ] Dynamic rate limit adjustment
+- [ ] Per-user rate limits
+- [ ] API key-based rate limiting
+- [ ] Rate limit templates for common patterns
+
+### 4. Monitoring & Analytics
+- [ ] Real-time dashboard
+- [ ] Alerting for abuse detection
+- [ ] Historical analytics
+- [ ] Anomaly detection
 - Redis connection status (if using Redis)
 - Error rates
 

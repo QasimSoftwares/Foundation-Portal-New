@@ -1,12 +1,37 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
 export async function GET() {
   try {
-    // Initialize Supabase client
-    const cookieStore = cookies();
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            const cookie = cookieStore.get(name)?.value;
+            // If the cookie is in base64 format, decode it
+            if (cookie && cookie.startsWith('base64-')) {
+              try {
+                return Buffer.from(cookie.slice(7), 'base64').toString('utf-8');
+              } catch (e) {
+                // If decoding fails, return the original cookie
+                return cookie;
+              }
+            }
+            return cookie;
+          },
+          set(name: string, value: string, options: any) {
+            cookieStore.set({ name, value, ...options });
+          },
+          remove(name: string, options: any) {
+            cookieStore.set({ name, value: '', ...options, maxAge: 0 });
+          },
+        },
+      }
+    );
 
     // This will automatically handle CSRF token generation via the auth helpers
     // The token will be set as an HTTP-only cookie

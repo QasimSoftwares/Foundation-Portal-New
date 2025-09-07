@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
+import { useCSRFContext } from '@/providers/CSRFProvider';
 
 interface SupabaseContextType {
   supabase: ReturnType<typeof createClientComponentClient>;
@@ -22,6 +23,7 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const supabase = createClientComponentClient();
   const router = useRouter();
+  const { csrfToken } = useCSRFContext();
 
   const refreshSession = async (): Promise<void> => {
     try {
@@ -49,13 +51,16 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
       // Clear local state first
       setSession(null);
       setUser(null);
-      
-      // Sign out from Supabase
+
+      // Call server-side signout to clear HttpOnly cookies and revoke sessions
+      await fetch('/api/auth/signout', { 
+        method: 'POST', 
+        credentials: 'include',
+        headers: csrfToken ? { 'x-csrf-token': csrfToken } : undefined,
+      });
+
+      // Also sign out client-side to clear any in-memory state in Supabase client
       await supabase.auth.signOut();
-      
-      // Clear any lingering auth cookies
-      document.cookie = 'sb-auth-token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
-      
     } catch (error) {
       console.error('Error signing out:', error);
       throw error; // Re-throw to be handled by the component

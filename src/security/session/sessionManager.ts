@@ -1,189 +1,220 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
-import { type NextRequest, type NextResponse } from 'next/server';
-import { cookies as nextCookies } from 'next/headers';
-import { createClient } from '@supabase/supabase-js';
-import type { Session, User } from '@supabase/supabase-js';
-import type { SessionData, SessionManagerConfig, SessionUser, SessionValidationResult, RefreshResult } from './types';
+// src/security/session/sessionManager.new.ts
 
-const DEFAULT_CONFIG: SessionManagerConfig = {
-  accessTokenCookieName: 'sb-access-token',
-  refreshTokenCookieName: 'sb-refresh-token',
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type { Session, User as SupabaseUser } from '@supabase/supabase-js';
+import { logger } from '@/lib/logger';
+import type { Database } from '@/types/supabase';
+import { SessionError } from '@/lib/errors';
+
+const DEFAULT_CONFIG = {
+  accessTokenCookieName: 'sb-access-token' as string,
+  refreshTokenCookieName: 'sb-refresh-token' as string,
   accessTokenMaxAge: 60 * 60, // 1 hour
   refreshTokenMaxAge: 60 * 60 * 24 * 7, // 7 days
-  secureCookies: process.env.NODE_ENV === 'production',
-  sameSite: 'lax',
+  maxConcurrentSessions: 5,
 };
 
-export class SessionManager {
-  private config: SessionManagerConfig;
-  
-  constructor(config: Partial<SessionManagerConfig> = {}) {
-    this.config = { ...DEFAULT_CONFIG, ...config };
-  }
+type SessionManagerConfig = {
+  accessTokenCookieName?: string;
+  refreshTokenCookieName?: string;
+  accessTokenMaxAge?: number;
+  refreshTokenMaxAge?: number;
+  maxConcurrentSessions?: number;
+  secureCookies?: boolean;
+  sameSite?: 'lax' | 'strict' | 'none';
+};
 
-  /**
-   * Get the Supabase client instance
-   */
-  getSupabaseClient() {
-    return createClient(
+type User = SupabaseUser;
+
+export class SessionManager {
+  private config: typeof DEFAULT_CONFIG & {
+    secureCookies: boolean;
+    sameSite: 'lax' | 'strict' | 'none';
+  };
+  private supabaseAdmin: SupabaseClient<Database>;
+
+  constructor(config: SessionManagerConfig = {}) {
+    this.config = {
+      ...DEFAULT_CONFIG,
+      secureCookies: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      ...config,
+    } as const;
+
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      throw new Error('SUPABASE_SERVICE_ROLE_KEY is not set');
+    }
+
+    this.supabaseAdmin = createClient<Database>(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
       {
         auth: {
-          autoRefreshToken: true,
+          autoRefreshToken: false,
           persistSession: false,
-          detectSessionInUrl: false,
         },
       }
     );
   }
 
   /**
-   * Get the user from the request
+   * Start a new user session using the RPC function
    */
-  async getUser(req: NextRequest): Promise<SessionUser | null> {
-    const supabase = this.getSupabaseClient();
-
-    // Get access token cookie name
-    const accessToken = req.cookies.get(this.getAccessTokenCookieName())?.value;
-    const refreshToken = req.cookies.get(this.getRefreshTokenCookieName())?.value;
-
-    if (!accessToken) return null;
-
+  async startSession(params: {
+    userId: string;
+    session: Session;
+    ip?: string | null;
+    userAgent?: string | null;
+    deviceId?: string | null;
+    deviceInfo?: any;
+  }): Promise<{ sessionId: string; refreshTokenId: string }> {
+    const { userId, session, ip, userAgent, deviceId, deviceInfo } = params;
+    const refresh = session.refresh_token;
+  
+    if (!refresh) {
+      throw new Error('Missing refresh token in session');
+    }
+  
     try {
-      // Set the session for this request
-      const { data: { user }, error } = await supabase.auth.getUser(accessToken);
+      // Call the RPC function and handle returned rows (PostgREST returns an array for table-returning functions)
+      const { data, error } = await this.supabaseAdmin
+        .rpc('create_user_session', {
+          p_user_id: userId,
+          p_refresh_token: refresh,
+          p_ip: ip || null,
+          p_user_agent: userAgent || null,
+          p_device_id: deviceId || null,
+          // Pass JSON objects directly for jsonb parameters
+          p_device_info: deviceInfo ?? null,
+        });
+  
+      if (error) {
+        // Include richer error context from PostgREST/Supabase
+        const enriched = typeof error === 'object' ? JSON.stringify(error) : String(error);
+        throw new Error(`Failed to create session: ${error.message} | ${enriched}`);
+      }
+  
+      // data is an array of rows; take the first result
+      const rows = data as unknown as Array<
+        { session_id?: string; refresh_token_id?: string; out_session_id?: string; out_refresh_token_id?: string }
+      > | null;
+      if (!rows || rows.length === 0) {
+        throw new Error('No data returned from session creation');
+      }
+      const result = rows[0];
 
-      if (error || !user) {
-        // Try to refresh the session if we have a refresh token
-        if (refreshToken) {
-          const { session: newSession, error: refreshError } = await this.refreshSession(refreshToken);
-          if (refreshError || !newSession) return null;
-          return this.normalizeUser(newSession.user);
-        }
-        return null;
+      const sessionId = result.out_session_id ?? result.session_id;
+      const refreshTokenId = result.out_refresh_token_id ?? result.refresh_token_id;
+
+      if (!sessionId || !refreshTokenId) {
+        throw new Error('Invalid data returned from session creation');
       }
 
-      return this.normalizeUser(user);
-    } catch (error) {
-      console.error('Error getting user:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Validate the session and get the user
-   */
-  async validateSession(req: NextRequest): Promise<SessionValidationResult> {
-    const user = await this.getUser(req);
-
-    if (!user) {
       return {
-        isValid: false,
-        user: null,
-        error: {
-          code: 'UNAUTHENTICATED',
-          message: 'No valid session found',
-        },
+        sessionId,
+        refreshTokenId,
       };
+    } catch (error) {
+      const errorContext = {
+        userId,
+        ip,
+        userAgent,
+        hasDeviceInfo: !!deviceInfo,
+      };
+      
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const sessionError = new SessionError(`Failed to start session: ${errorMessage}`, errorContext);
+      
+      // Log the error with context in the message
+      logger.error(`${sessionError.message} | ${JSON.stringify(errorContext)}`, sessionError);
+      
+      throw sessionError;
     }
-
-    return {
-      isValid: true,
-      user,
-    };
   }
-
   /**
-   * Refresh the session using a refresh token
+   * Refresh a user session
    */
-  async refreshSession(refreshToken: string): Promise<{ session: Session | null; error: any }> {
-    const supabase = this.getSupabaseClient();
-
+  async refreshSession(params: {
+    oldRefreshToken: string;
+    newRefreshToken: string;
+    ip?: string | null;
+    userAgent?: string | null;
+  }): Promise<{ sessionId: string; refreshTokenId: string }> {
     try {
-      const { data, error } = await supabase.auth.refreshSession({
-        refresh_token: refreshToken,
+      const { data, error } = await this.supabaseAdmin.rpc('refresh_user_session', {
+        p_old_refresh_token: params.oldRefreshToken,
+        p_new_refresh_token: params.newRefreshToken,
+        p_ip: params.ip || null,
+        p_user_agent: params.userAgent || null,
       });
 
-      if (error || !data.session) {
-        return { session: null, error: error || new Error('No session returned') };
+      if (error) {
+        throw new Error(`Failed to refresh session: ${error.message}`);
       }
 
-      return { session: data.session, error: null };
+      if (!data) {
+        throw new Error('No data returned from session refresh');
+      }
+
+      const result = data as unknown as { session_id: string; refresh_token_id: string };
+
+      return {
+        sessionId: result.session_id,
+        refreshTokenId: result.refresh_token_id,
+      };
     } catch (error) {
-      console.error('Error refreshing session:', error);
-      return { session: null, error };
+      const errorContext = {
+        ip: params.ip,
+        userAgent: params.userAgent,
+      };
+      
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const sessionError = new SessionError(`Failed to refresh session: ${errorMessage}`, errorContext);
+      
+      // Log the error with context in the message
+      logger.error(`${sessionError.message} | ${JSON.stringify(errorContext)}`, sessionError);
+      
+      throw sessionError;
     }
   }
 
   /**
-   * Set session cookies in the response
+   * Revoke a session
    */
-  setSessionCookies(res: NextResponse, session: Session): NextResponse {
-    const { access_token, refresh_token } = session;
-    if (!access_token || !refresh_token) return res;
+  async revokeSession(params: {
+    sessionId: string;
+    reason?: string;
+  }): Promise<void> {
+    try {
+      const { error } = await this.supabaseAdmin.rpc('revoke_session', {
+        p_session_id: params.sessionId,
+        p_reason: params.reason || 'user_logout',
+      });
 
-    // Set access token cookie
-    res.cookies.set({
-      name: this.config.accessTokenCookieName,
-      value: access_token,
-      httpOnly: true,
-      secure: this.config.secureCookies,
-      sameSite: this.config.sameSite,
-      path: '/',
-      maxAge: this.config.accessTokenMaxAge,
-      ...(this.config.cookieDomain && { domain: this.config.cookieDomain }),
-    });
-
-    // Set refresh token cookie
-    res.cookies.set({
-      name: this.config.refreshTokenCookieName,
-      value: refresh_token,
-      httpOnly: true,
-      secure: this.config.secureCookies,
-      sameSite: this.config.sameSite,
-      path: '/',
-      maxAge: this.config.refreshTokenMaxAge,
-      ...(this.config.cookieDomain && { domain: this.config.cookieDomain }),
-    });
-
-    return res;
+      if (error) {
+        throw new Error(`Failed to revoke session: ${error.message}`);
+      }
+    } catch (error) {
+      const errorContext = {
+        sessionId: params.sessionId,
+        reason: params.reason
+      };
+      
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const sessionError = new SessionError(`Failed to revoke session: ${errorMessage}`, errorContext);
+      
+      // Log the error with context in the message
+      logger.error(`${sessionError.message} | ${JSON.stringify(errorContext)}`, sessionError);
+      
+      throw sessionError;
+    }
   }
 
   /**
-   * Clear session cookies
+   * Get the Supabase client
    */
-  clearSessionCookies(res: NextResponse): NextResponse {
-    // Clear access token cookie
-    res.cookies.set({
-      name: this.config.accessTokenCookieName,
-      value: '',
-      expires: new Date(0),
-      path: '/',
-    });
-
-    // Clear refresh token cookie
-    res.cookies.set({
-      name: this.config.refreshTokenCookieName,
-      value: '',
-      expires: new Date(0),
-      path: '/',
-    });
-
-    return res;
-  }
-
-  /**
-   * Normalize user object from Supabase
-   */
-  private normalizeUser(user: User): SessionUser {
-    return {
-      id: user.id,
-      email: user.email || '',
-      role: user.user_metadata?.role || 'user',
-      email_verified: user.email_confirmed_at !== null,
-      ...(user as Omit<SessionUser, 'id' | 'email'>),
-    };
+  getSupabaseClient(): SupabaseClient<Database> {
+    return this.supabaseAdmin;
   }
 
   /**
@@ -199,10 +230,54 @@ export class SessionManager {
   getRefreshTokenCookieName(): string {
     return this.config.refreshTokenCookieName;
   }
+
+  /**
+   * Get the access token max age
+   */
+  getAccessTokenMaxAge(): number {
+    return this.config.accessTokenMaxAge;
+  }
+
+  /**
+   * Get the refresh token max age
+   */
+  getRefreshTokenMaxAge(): number {
+    return this.config.refreshTokenMaxAge;
+  }
+
+  /**
+   * Get the secure cookies setting
+   */
+  getSecureCookies(): boolean {
+    return this.config.secureCookies;
+  }
+
+  /**
+   * Get the same site setting
+   */
+  getSameSite(): 'lax' | 'strict' | 'none' {
+    return this.config.sameSite;
+  }
+
+  /**
+   * Get the current user
+   */
+  async getUser(): Promise<User | null> {
+    try {
+      const { data: { user }, error } = await this.supabaseAdmin.auth.getUser();
+      
+      if (error) {
+        throw new SessionError('Failed to get user', { error: error.message });
+      }
+      
+      return user;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logger.error(`Failed to get user: ${errorMessage}`);
+      return null;
+    }
+  }
 }
 
 // Export a singleton instance
 export const sessionManager = new SessionManager();
-
-// Export types
-export type { SessionUser, SessionValidationResult, RefreshResult } from './types';
