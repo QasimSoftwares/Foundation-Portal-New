@@ -25,6 +25,9 @@ const formSchema = z.object({
   password: passwordSchema,
   confirmPassword: z.string().min(1, 'Please confirm your password'),
   fullName: z.string().min(2, 'Name must be at least 2 characters'),
+  acceptTerms: z.boolean().refine(val => val === true, {
+    message: 'You must accept the terms and conditions',
+  }),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
@@ -39,7 +42,6 @@ function SignUpContent() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const supabase = createClientComponentClient();
-  const callbackUrl = searchParams?.get('callbackUrl') || '/dashboard';
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -63,6 +65,7 @@ function SignUpContent() {
           email: data.email,
           password: data.password,
           fullName: data.fullName,
+          acceptTerms: data.acceptTerms,
         }),
       });
 
@@ -72,21 +75,25 @@ function SignUpContent() {
         throw new Error(result.message || 'Failed to create account');
       }
 
-      // Show success message
-      toast({
-        title: 'Success',
-        description: 'Account created successfully! Please check your email to verify your account.',
-      });
+      // Show success message using the toast function from the hook
+      if (toast) {
+        toast({
+          title: 'Success',
+          description: 'Account created successfully! Please check your email to verify your account.',
+        });
+      }
 
-      // Redirect to login page
-      router.push('/signin');
+      // Redirect to verify email page with the user's email as a query parameter
+      router.push(`/verify-email?email=${encodeURIComponent(data.email)}`);
     } catch (error) {
       console.error('Signup error:', error);
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to create account',
-        variant: 'destructive',
-      });
+      if (toast) {
+        toast({
+          title: 'Error',
+          description: error instanceof Error ? error.message : 'Failed to create account',
+          variant: 'destructive',
+        });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -98,14 +105,15 @@ function SignUpContent() {
         <div className="w-full max-w-md space-y-4 mt-8">
           {/* Logo and Welcome Message */}
           <div className="text-center">
-            <div className="w-20 h-20 relative mx-auto">
+            <div className="w-20 h-20 relative mx-auto flex items-center justify-center">
               <Image
                 src="/logo.png"
                 alt="Family And Fellows Foundation Logo"
-                fill
+                width={80}
+                height={80}
+                className="w-auto h-auto max-w-full max-h-full object-contain"
                 priority
-                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                className="w-full h-full object-contain"
+                style={{ width: 'auto', height: 'auto' }}
               />
             </div>
             <h1 className="mt-4 text-2xl font-bold text-gray-900">
@@ -248,7 +256,38 @@ function SignUpContent() {
                   )}
                 />
 
-                <div className="pt-4">
+                <div className="space-y-4 pt-2">
+                  <FormField
+                    control={form.control}
+                    name="acceptTerms"
+                    render={({ field }) => (
+                      <FormItem className="flex items-start space-x-3 space-y-0 rounded-md">
+                        <FormControl>
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 mt-1 rounded border-gray-300 text-brand-blue focus:ring-brand-blue"
+                            checked={field.value}
+                            onChange={(e) => field.onChange(e.target.checked)}
+                            disabled={isLoading}
+                          />
+                        </FormControl>
+                        <div className="space-y-1 leading-none">
+                          <FormLabel className="text-sm text-gray-600">
+                            I agree to the{' '}
+                            <Link href="/terms" className="text-brand-blue hover:underline">
+                              Terms of Service
+                            </Link>{' '}
+                            and{' '}
+                            <Link href="/privacy" className="text-brand-blue hover:underline">
+                              Privacy Policy
+                            </Link>
+                          </FormLabel>
+                          <FormMessage />
+                        </div>
+                      </FormItem>
+                    )}
+                  />
+
                   <Button
                     type="submit"
                     className="w-full bg-brand-blue hover:bg-blue-700 transition-colors duration-200"

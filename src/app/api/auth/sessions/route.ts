@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
-import { sessionManager } from '@/security/session/sessionManager';
+import { logger } from '@/lib/utils/logger';
 import { securityLogger } from '@/lib/security/securityLogger';
 import { getClientIp } from '@/lib/utils/ip-utils';
 
@@ -76,7 +76,7 @@ export async function GET() {
     return NextResponse.json({ sessions: formattedSessions });
     
   } catch (error: any) {
-    console.error('Error fetching sessions:', error);
+    logger.error(`Error fetching sessions: ${error?.message || String(error)}`);
     
     // Log the error
     await securityLogger.logSecurityAlert(
@@ -204,7 +204,7 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ success: true });
     
   } catch (error: any) {
-    console.error('Error revoking session:', error);
+    logger.error(`Error revoking session: ${error?.message || String(error)}`);
     
     // Log the error
     await securityLogger.logSecurityAlert(

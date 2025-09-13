@@ -1,6 +1,6 @@
 import type { Request } from 'express';
 import { createHash, randomBytes } from 'crypto';
-import { supabaseClient } from '@/lib/supabaseClient';
+import { supabase } from '@/lib/supabase/client';
 import type { TokenPayload } from '../types/supabase';
 import { auditEvents } from './auditService';
 
@@ -91,7 +91,7 @@ export class TokenService {
     const userAgent = req?.headers['user-agent'] || '';
     const sessionIdentifier = sessionId || this.generateSessionId();
 
-    const { data, error } = await supabaseClient.rpc('create_refresh_token', {
+    const { data, error } = await supabase.rpc('create_refresh_token', {
       p_user_id: userId,
       p_token: hashedToken,
       p_expires_at: expiresAt.toISOString(),
@@ -120,7 +120,7 @@ export class TokenService {
   ): Promise<{ isValid: boolean; userId?: string; sessionId?: string }> {
     const hashedToken = this.hashToken(token);
     
-    const { data, error } = await supabaseClient.rpc('validate_refresh_token', {
+    const { data, error } = await supabase.rpc('validate_refresh_token', {
       p_token: hashedToken,
       p_ip_address: req?.ip || ''
     });
@@ -141,14 +141,14 @@ export class TokenService {
   static async revokeRefreshToken(tokenOrSessionId: string, bySessionId = false): Promise<boolean> {
     try {
       if (bySessionId) {
-        const { error } = await supabaseClient.rpc('revoke_refresh_token_by_session', {
+        const { error } = await supabase.rpc('revoke_refresh_token_by_session', {
           p_session_id: tokenOrSessionId
         });
         return !error;
       }
       
       const hashedToken = this.hashToken(tokenOrSessionId);
-      const { error } = await supabaseClient.rpc('revoke_refresh_token', {
+      const { error } = await supabase.rpc('revoke_refresh_token', {
         p_token: hashedToken
       });
       
@@ -161,14 +161,14 @@ export class TokenService {
 
   // Revoke all refresh tokens for a user
   static async revokeAllUserTokens(userId: string): Promise<void> {
-    await supabaseClient.rpc('revoke_all_user_refresh_tokens', { 
+    await supabase.rpc('revoke_all_user_refresh_tokens', { 
       p_user_id: userId 
     });
   }
 
   // Clean up expired tokens
   static async cleanupExpiredTokens(): Promise<void> {
-    await supabaseClient.rpc('cleanup_expired_tokens');
+    await supabase.rpc('cleanup_expired_tokens');
   }
 
   // Hash token for secure storage
@@ -182,7 +182,7 @@ export class TokenService {
    */
   static async getUserSessions(userId: string): Promise<UserSession[]> {
     try {
-      const { data, error } = await supabaseClient
+      const { data, error } = await supabase
         .from('refresh_tokens')
         .select(`
           id,
@@ -204,20 +204,34 @@ export class TokenService {
         throw new Error('Failed to fetch user sessions');
       }
 
-      return (data || []).map((session: DBSession) => ({
-        id: session.id,
-        sessionId: session.session_id,
-        createdAt: session.created_at,
-        expiresAt: session.expires_at,
-        lastUsedAt: session.last_used_at,
-        ipAddress: session.ip_address,
-        userAgent: session.user_agent,
-        isRevoked: session.revoked,
-        deviceInfo: session.data?.device_info,
-        location: session.data?.location,
+      // Row shape returned by the select above
+      type RefreshRow = {
+        id: string;
+        session_id: string;
+        created_at: string;
+        expires_at: string;
+        last_used_at: string | null;
+        ip_address: string;
+        user_agent: string | null;
+        revoked: boolean;
+        device_info?: string | null;
+        location?: string | null;
+      };
+
+      return (data as RefreshRow[] | null || []).map((row) => ({
+        id: row.id,
+        sessionId: row.session_id,
+        createdAt: row.created_at,
+        expiresAt: row.expires_at,
+        lastUsedAt: row.last_used_at,
+        ipAddress: row.ip_address,
+        userAgent: row.user_agent,
+        isRevoked: row.revoked,
+        deviceInfo: (row as any).device_info ?? undefined,
+        location: (row as any).location ?? undefined,
         isCurrent: false, // Will be set by the caller if needed
-        isExpired: new Date(session.expires_at) < new Date(),
-        lastActive: session.last_used_at || session.created_at
+        isExpired: new Date(row.expires_at) < new Date(),
+        lastActive: row.last_used_at || row.created_at
       }));
     } catch (error) {
       console.error('Error in getUserSessions:', error);
@@ -239,7 +253,7 @@ export class TokenService {
       }
 
       // Verify the access token with Supabase
-      const { data: { user }, error } = await supabaseClient.auth.getUser(accessToken);
+      const { data: { user }, error } = await supabase.auth.getUser(accessToken);
       
       if (error || !user) {
         return { session: null };
@@ -259,7 +273,7 @@ export class TokenService {
       }
 
       // Get user roles from the database
-      const { data: userData } = await supabaseClient
+      const { data: userData } = await supabase
         .from('user_roles')
         .select('*')
         .eq('user_id', user.id)
@@ -276,7 +290,7 @@ export class TokenService {
             sessionId = sid;
             
             // Update last used timestamp
-            const { error } = await supabaseClient.rpc('update_token_last_used', {
+            const { error } = await supabase.rpc('update_token_last_used', {
               p_session_id: sid,
               p_ip_address: req.ip || ''
             });

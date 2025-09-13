@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { LRUCache } from 'lru-cache';
 
+// Deprecated module: use '@/lib/security/rateLimit' instead.
+// Throw on import to prevent accidental usage.
+throw new Error("Deprecated: Use '@/lib/security/rateLimit' (camelCase) as the single source of truth for rate limiting.");
+
 type Options = {
   uniqueTokenPerInterval?: number;
   interval?: number;

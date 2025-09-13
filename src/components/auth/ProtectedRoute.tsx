@@ -3,6 +3,7 @@
 import { ReactNode } from 'react';
 import { useAuthRedirect } from '@/hooks/useAuthRedirect';
 import { Loader2 } from 'lucide-react';
+import { DashboardLink } from '@/components/nav/DashboardLink';
 
 type ProtectedRouteProps = {
   children: ReactNode;
@@ -25,12 +26,9 @@ export function ProtectedRoute({
       <p className="text-gray-600 mb-4">
         You don't have permission to access this page.
       </p>
-      <a
-        href="/dashboard"
-        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-      >
+      <DashboardLink className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
         Back to Dashboard
-      </a>
+      </DashboardLink>
     </div>
   ),
 }: ProtectedRouteProps) {

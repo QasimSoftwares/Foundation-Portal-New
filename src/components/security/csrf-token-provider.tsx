@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { getCookie } from 'cookies-next';
+import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from '@/lib/security/csrf';
 
 /**
  * CSRF Token Provider
@@ -10,7 +11,7 @@ import { getCookie } from 'cookies-next';
  * The token is managed by the centralized middleware and is automatically
  * included in cookies. This component makes it available for forms.
  * 
- * For API requests, the token should be included in the 'X-CSRF-Token' header.
+ * For API requests, the token should be included in the header defined by CSRF_HEADER_NAME.
  * The fetch wrapper in your API client should handle this automatically.
  */
 export function CSRFTokenInput() {
@@ -18,7 +19,7 @@ export function CSRFTokenInput() {
 
   useEffect(() => {
     // Get CSRF token from cookie set by the middleware
-    const token = getCookie('sb-csrf-token') as string;
+    const token = getCookie(CSRF_COOKIE_NAME) as string;
     if (token) {
       setCsrfToken(token);
     }
@@ -28,7 +29,7 @@ export function CSRFTokenInput() {
   return csrfToken ? (
     <input 
       type="hidden" 
-      name="_csrf" 
+      name={CSRF_HEADER_NAME}
       value={csrfToken} 
       data-testid="csrf-token"
     />
@@ -43,7 +44,7 @@ export function useCSRFToken(): string | null {
   const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
-    const token = getCookie('sb-csrf-token') as string | undefined;
+    const token = getCookie(CSRF_COOKIE_NAME) as string | undefined;
     setToken(token || null);
   }, []);
 
@@ -58,11 +59,11 @@ export async function fetchWithCSRF(
   input: RequestInfo | URL,
   init?: RequestInit
 ): Promise<Response> {
-  const token = getCookie('sb-csrf-token') as string | undefined;
+  const token = getCookie(CSRF_COOKIE_NAME) as string | undefined;
   
   const headers = new Headers(init?.headers);
   if (token) {
-    headers.set('X-CSRF-Token', token);
+    headers.set(CSRF_HEADER_NAME, token);
   }
 
   return fetch(input, {

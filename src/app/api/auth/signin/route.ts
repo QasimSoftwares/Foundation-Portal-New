@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
-import { sessionManager } from '@/security/session/sessionManager';
+import { 
+  fetchUserRoles, 
+  type UserRole, 
+  getHighestRole, 
+  getDashboardPath 
+} from '@/lib/security/roles';
 import { getClientIp } from '@/lib/utils/ip-utils';
-import { logger } from '@/lib/logger';
+import { logger } from '@/lib/utils/logger';
 import { supabase } from '@/lib/supabase/client';
 
 export async function POST(request: Request) {
@@ -67,13 +72,7 @@ export async function POST(request: Request) {
       const message = isInvalidCredentials ? 'Incorrect email or password' : (error?.message || 'Invalid login credentials');
       const errorCode = isInvalidCredentials ? 'INVALID_CREDENTIALS' : 'AUTH_ERROR';
       
-      logger.warn('Sign in failed', { 
-        email, 
-        ip,
-        uaHash,
-        errorCode,
-        message,
-      });
+      logger.warn(`[Auth] Sign in failed email=${email} ip=${ip} uaHash=${uaHash} code=${errorCode} msg=${message}`);
       
       return NextResponse.json(
         { error: { code: errorCode, message } },
@@ -81,67 +80,65 @@ export async function POST(request: Request) {
       );
     }
 
-    // Start a new session in our database
-    await sessionManager.startSession({
-      userId: data.user.id,
-      session: data.session,
-      ip,
-      deviceId: null // Optional: Add device fingerprinting if needed
-    });
-
-    // Set cookies using the session manager's config
-    const cookieOptions = {
-      httpOnly: true,
-      secure: sessionManager.getSecureCookies(),
-      sameSite: sessionManager.getSameSite(),
-      path: '/',
-    };
-
-    // Set access token cookie as JSON string
-    const accessTokenValue = JSON.stringify({
-      access_token: data.session.access_token,
-      expires_at: Math.floor(Date.now() / 1000) + sessionManager.getAccessTokenMaxAge(),
-      expires_in: sessionManager.getAccessTokenMaxAge(),
-      token_type: 'bearer',
-      user: {
-        id: data.user.id,
-        email: data.user.email,
-        user_metadata: data.user.user_metadata,
-      },
-    });
-
-    response.cookies.set({
-      name: sessionManager.getAccessTokenCookieName(),
-      value: accessTokenValue,
-      ...cookieOptions,
-      maxAge: sessionManager.getAccessTokenMaxAge(),
-    });
-
-    // Set refresh token cookie as JSON string if available
-    if (data.session.refresh_token) {
-      const refreshTokenValue = JSON.stringify({
-        refresh_token: data.session.refresh_token,
-        expires_at: Math.floor(Date.now() / 1000) + sessionManager.getRefreshTokenMaxAge(),
-        expires_in: sessionManager.getRefreshTokenMaxAge(),
-      });
-
-      response.cookies.set({
-        name: sessionManager.getRefreshTokenCookieName(),
-        value: refreshTokenValue,
-        ...cookieOptions,
-        maxAge: sessionManager.getRefreshTokenMaxAge(),
-      });
+    // Ensure session is properly established by confirming it exists
+    const { data: { session: confirmedSession } } = await supabase.auth.getSession();
+    if (!confirmedSession) {
+      logger.error(`[Auth] Session confirmation failed after successful sign-in for user ${data.user.id}`);
+      return NextResponse.json(
+        { error: { code: 'SESSION_ERROR', message: 'Failed to establish session' } },
+        { status: 500, headers: response.headers }
+      );
     }
 
-    logger.info('User signed in', { 
-      userId: data.user.id, 
-      email, 
-      ip, 
-      uaHash 
+    // Note: The original code used a sessionManager which is deprecated.
+    // The Supabase client's `set` handler for cookies already manages setting the auth tokens.
+    // The signInWithPassword call above triggers the `set` handler in the createServerClient config.
+
+    logger.info(`[Auth] User signed in userId=${data.user.id} email=${email} ip=${ip} uaHash=${uaHash}`);
+
+    const { user, session } = data;
+    let roles: UserRole[] = [];
+
+    // Fetch user roles once
+    try {
+      roles = await fetchUserRoles(user.id, { accessToken: session.access_token });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      logger.warn(`[Auth] Could not fetch user roles for user ${user.id}: ${msg}`);
+      // Default to viewer role if fetching fails to prevent login failure
+      roles = ['viewer'];
+    }
+
+    // Set the active-role cookie
+    const highestRole = getHighestRole(roles);
+    
+    // Set secure cookie options based on environment
+    const cookieOptions = {
+      httpOnly: true,
+      sameSite: 'lax' as const,
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: 60 * 60 * 24, // 1 day
+    };
+
+    // Set the active role cookie
+    response.cookies.set({
+      name: 'active-role',
+      value: highestRole,
+      ...cookieOptions
     });
 
-    // Return user data (excluding sensitive info)
-    const { user, session } = data;
+    // Clear any redirect count cookie that might be set
+    response.cookies.set({
+      name: '_redirect_count',
+      value: '0',
+      ...cookieOptions,
+      maxAge: 0 // Expire immediately
+    });
+
+    // Get the dashboard path based on the user's highest role
+    const dashboard = getDashboardPath(highestRole);
+
     const userData = {
       id: user.id,
       email: user.email,
@@ -156,17 +153,28 @@ export async function POST(request: Request) {
       expires_at: session.expires_at,
     };
 
-    return NextResponse.json({ user: userData, session: sessionTokens }, {
-      status: 200,
-      headers: response.headers,
+    // Return the response with all cookies set
+    const jsonResponse = NextResponse.json(
+      { 
+        user: userData, 
+        session: sessionTokens, 
+        dashboard 
+      },
+      { 
+        status: 200,
+        headers: response.headers,
+      }
+    );
+
+    // Copy all cookies from the response to the JSON response
+    response.cookies.getAll().forEach(cookie => {
+      jsonResponse.cookies.set(cookie);
     });
 
+    return jsonResponse;
+
   } catch (error: any) {
-    logger.error('Sign in error', error, { 
-      stack: error.stack,
-      ip,
-      uaHash
-    });
+    logger.error(`[Auth] Sign in error: ${error?.message || String(error)} ip=${ip} uaHash=${uaHash}`);
     return NextResponse.json(
       { error: { code: 'INTERNAL_ERROR', message: 'An error occurred during sign in' } },
       { status: 500 }

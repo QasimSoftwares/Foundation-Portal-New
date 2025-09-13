@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
-import { sessionManager } from '@/security/session/sessionManager';
 import { securityLogger } from '@/lib/security/securityLogger';
 import { getClientIp } from '@/lib/utils/ip-utils';
-import { logger } from '@/lib/logger';
+import { logger } from '@/lib/utils/logger';
 import { Buffer } from 'buffer';
 
 type User = {
@@ -34,17 +33,17 @@ export async function POST(request: Request) {
       {
         cookies: {
           get(name: string) {
-            const cookie = cookieStore.get(name)?.value;
+            const raw = cookieStore.get(name)?.value;
             // If the cookie is in base64 format, decode it
-            if (cookie && cookie.startsWith('base64-')) {
+            if (raw && raw.startsWith('base64-')) {
               try {
-                return Buffer.from(cookie.slice(7), 'base64').toString('utf-8');
+                return Buffer.from(raw.slice(7), 'base64').toString('utf-8');
               } catch (e) {
                 // If decoding fails, return the original cookie
-                return cookie;
+                return raw;
               }
             }
-            return cookie;
+            return raw;
           },
           set(name: string, value: string, options: any) {
             // Don't modify the cookie if it's already in the correct format
@@ -99,11 +98,8 @@ export async function POST(request: Request) {
               throw new Error('Session ID not found in JWT');
             }
             
-            await sessionManager.revokeSession({
-              sessionId,
-              reason: 'user_logout'
-            });
-            logger.info('Server-side session revoked', { userId: user.id });
+            // The sessionManager is deprecated. Session revocation is handled by Supabase's signOut.
+            logger.info(`[Session] Server-side session revoked userId=${user.id}`);
           } catch (revokeError) {
             // Log the error but don't fail the sign-out process
             if (revokeError) {
@@ -111,38 +107,19 @@ export async function POST(request: Request) {
                 ? revokeError.message 
                 : String(revokeError);
               
-              // Log the error with proper error object
               if (errorMessage) {
-                const errorObj = new Error(`Error revoking server-side session: ${errorMessage}`);
-                if (revokeError instanceof Error) {
-                  errorObj.stack = revokeError.stack;
-                }
-                // Log error details
-                const errorDetails = { 
-                  message: errorObj.message, 
-                  stack: errorObj.stack,
-                  context: { userId: user?.id }
-                };
-                logger.error(JSON.stringify(errorDetails));
+                logger.error(`[Session] Error revoking server-side session for userId=${user?.id}: ${errorMessage}`);
               }
             }
           }
         }
         
-        // Delete access token cookie
+        // Note: The Supabase client's `remove` handler for cookies already manages clearing the auth tokens.
+        // The signOut call above triggers the `remove` handler in the createServerClient config.
+
+        // Delete active role cookie as part of sign out
         response.cookies.set({
-          name: sessionManager.getAccessTokenCookieName(),
-          value: '',
-          path: '/',
-          maxAge: 0,
-          sameSite: 'lax',
-          secure: process.env.NODE_ENV === 'production',
-          httpOnly: true,
-        });
-        
-        // Delete refresh token cookie
-        response.cookies.set({
-          name: sessionManager.getRefreshTokenCookieName(),
+          name: 'active-role',
           value: '',
           path: '/',
           maxAge: 0,
@@ -178,18 +155,7 @@ export async function POST(request: Request) {
     
     // Ensure cookies are cleared even if there was an error
     if (user?.id) {
-      response.cookies.set({
-        name: sessionManager.getAccessTokenCookieName(),
-        value: '',
-        path: '/',
-        maxAge: 0,
-      });
-      response.cookies.set({
-        name: sessionManager.getRefreshTokenCookieName(),
-        value: '',
-        path: '/',
-        maxAge: 0,
-      });
+      // Note: The Supabase client's `remove` handler for cookies already manages clearing the auth tokens.
     }
     
     return NextResponse.json(

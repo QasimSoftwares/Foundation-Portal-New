@@ -1,6 +1,6 @@
 import { serialize } from 'cookie';
 import { NextRequest, NextResponse } from 'next/server';
-import { logger } from '@/lib/logger';
+import { logger } from '@/lib/utils/logger';
 
 // CSRF token configuration
 const CSRF_CONFIG = {
@@ -24,6 +24,10 @@ const CSRF_CONFIG = {
     'POST:/api/auth/verify-email'
   ] as string[]
 } as const;
+
+export const CSRF_HEADER_NAME = CSRF_CONFIG.HEADER_NAME;
+export const CSRF_COOKIE_NAME = CSRF_CONFIG.COOKIE_NAME;
+export const CSRF_NEW_TOKEN_HEADER = CSRF_CONFIG.NEW_TOKEN_HEADER;
 
 type CSRFToken = {
   token: string;
@@ -71,10 +75,8 @@ export function getCSRFTokenFromRequest(request: NextRequest): string | null {
     const cookieToken = request.cookies.get(CSRF_CONFIG.COOKIE_NAME)?.value ?? null;
     return cookieToken;
   } catch (error) {
-    logger.error('Error getting CSRF token from request', error as Error, {
-      path: request.nextUrl.pathname,
-      method: request.method
-    });
+    const msg = error instanceof Error ? error.message : String(error);
+    logger.error(`[CSRF] Error getting token from request path=${request.nextUrl.pathname} method=${request.method}: ${msg}`);
     return null;
   }
 }
@@ -159,14 +161,10 @@ export function withCSRFProtection(handler: (req: NextRequest) => Promise<NextRe
     try {
       // Validate CSRF token
       if (!validateCSRFToken(requestToken, sessionToken)) {
-        logger.warn('CSRF validation failed', {
-          path: request.nextUrl.pathname,
-          method: request.method,
-          ip: getClientIp(request),
-          timestamp: new Date().toISOString(),
-          hasToken: Boolean(requestToken),
-          tokenValid: requestToken ? 'invalid' : 'missing'
-        });
+        const ip = getClientIp(request);
+        const hasToken = Boolean(requestToken);
+        const tokenStatus = requestToken ? 'invalid' : 'missing';
+        logger.warn(`[CSRF] Validation failed path=${request.nextUrl.pathname} method=${request.method} ip=${ip ?? 'unknown'} hasToken=${hasToken} status=${tokenStatus} ts=${new Date().toISOString()}`);
 
         return new NextResponse(
           JSON.stringify({ error: 'Invalid or missing CSRF token' }),
@@ -196,11 +194,9 @@ export function withCSRFProtection(handler: (req: NextRequest) => Promise<NextRe
         return handlerResponse;
       });
     } catch (error) {
-      logger.error('Error in CSRF protection middleware', error as Error, {
-        path: request.nextUrl.pathname,
-        method: request.method,
-        ip: getClientIp(request)
-      });
+      const msg = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack : undefined;
+      logger.error(`[CSRF] Middleware error path=${request.nextUrl.pathname} method=${request.method} ip=${getClientIp(request) ?? 'unknown'}: ${msg}${stack ? `\n${stack}` : ''}`);
       
       return new NextResponse(
         JSON.stringify({ error: 'Internal server error' }),

@@ -2,8 +2,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { withRateLimit } from '@/lib/rate-limit';
-import { securityLogger } from '@/lib/security/security-logger';
+import { logger } from '@/lib/utils/logger';
 
 // Define request schema
 const requestSchema = z.object({
@@ -14,8 +13,7 @@ const requestSchema = z.object({
   message: z.string().optional(),
 });
 
-export const POST = withRateLimit(
-  async (request: NextRequest) => {
+export async function POST(request: NextRequest) {
     try {
       const cookieStore = cookies();
       const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
@@ -58,23 +56,19 @@ export const POST = withRateLimit(
         .single();
 
       if (profileError) {
-        console.error('Error updating profile:', profileError);
-        return NextResponse.json(
-          { error: 'Failed to update profile information' },
-          { status: 500 }
-        );
+        logger.error(`[DonorRequest] Failed to update profile for user=${session.user.id}: ${profileError.message}`);
+        return NextResponse.json({ error: 'Failed to update profile information' }, { status: 500 });
       }
 
       // Create donor request using RPC
       const { data: requestData, error: requestError } = await supabase.rpc('create_donor_request');
       
       if (requestError) {
-        console.error('Error creating donor request:', requestError);
-        throw new Error(
-          requestError.message.includes('already have a pending') 
-            ? 'You already have a pending donor request' 
-            : 'Failed to create donor request'
-        );
+        const message = requestError.message.includes('already have a pending')
+          ? 'You already have a pending donor request'
+          : 'Failed to create donor request';
+        logger.warn(`[DonorRequest] Create request failed user=${session.user.id}: ${message}`);
+        return NextResponse.json({ error: message }, { status: 400 });
       }
       
       // Ensure we have the request ID
@@ -83,18 +77,8 @@ export const POST = withRateLimit(
       }
 
 
-      // Log the security event
-      await securityLogger.log({
-        userId: session.user.id,
-        action: 'donor_request_created',
-        entityType: 'donor_request',
-        entityId: requestData,
-        metadata: {
-          status: 'pending'
-        },
-        ip: request.headers.get('x-forwarded-for') || 'unknown',
-        userAgent: request.headers.get('user-agent') || 'unknown'
-      });
+      // Log the event
+      logger.info(`[DonorRequest] Created request id=${requestData} user=${session.user.id}`);
 
       return NextResponse.json({ 
         success: true, 
@@ -102,21 +86,11 @@ export const POST = withRateLimit(
       });
 
     } catch (error) {
-      console.error('Donor request error:', error);
-      
-      return NextResponse.json(
-        { error: error instanceof Error ? error.message : 'Internal server error' },
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
-      );
+      const message = error instanceof Error ? error.message : 'Internal server error';
+      logger.error(`[DonorRequest] Error: ${message}`);
+      return NextResponse.json({ error: message }, { status: 500 });
     }
-  },
-  {
-    // Rate limiting configuration
-    maxRequests: 5, // 5 requests
-    timeWindow: 60 * 60 * 1000, // per hour
-    errorMessage: 'Too many requests. Please try again later.'
   }
-);
 
 // Add OPTIONS handler for CORS preflight
 export const OPTIONS = async () => {

@@ -1,5 +1,127 @@
 # Security Implementation
 
+> Centralized security architecture is enforced across the codebase. This document reflects the current implementation and security best practices.
+
+## Single Sources of Truth
+
+- **Authentication & Sessions**: `src/middleware.ts`
+- **Authorization (RBAC)**: `src/lib/security/roles.ts`
+- **Routes & Security Headers**: `src/config/routes.ts`
+- **Rate Limiting**: `src/lib/security/rateLimit.ts`
+- **CSRF Protection**: `src/lib/security/csrf.ts`
+- **Logging**: `src/lib/utils/logger.ts`
+- **Security Events**: `src/lib/security/securityLogger.ts`
+
+## Security Architecture
+
+### Authentication & Session Management
+- Session validation and management is handled in `src/middleware.ts`
+- Uses secure, HTTP-only cookies with SameSite=Strict
+- Session tokens are validated on each request
+- Automatic token refresh before expiration
+- Concurrent session control
+- Session invalidation on password change/logout
+
+### CSRF Protection
+- Implements Double Submit Cookie pattern
+- Token rotation on sensitive actions
+- Secure token comparison with timing attack protection
+- Required for all state-changing requests (non-GET/HEAD/OPTIONS)
+
+### Rate Limiting
+- Multiple presets for different endpoint types
+- IP-based rate limiting
+- Request throttling
+- Automatic retry-after headers
+
+### Logging & Monitoring
+- Centralized logging through `src/lib/utils/logger.ts`
+- Security event tracking via `securityLogger`
+- Structured JSON logging
+- Request tracing with unique IDs
+- Error tracking integration
+
+## Deprecated & Removed Modules
+
+### Removed
+- `src/lib/logger.ts` - Replaced by `src/lib/utils/logger.ts`
+- `src/lib/security/security-logger.ts` - Duplicate of `securityLogger.ts`
+
+### Deprecated (Do Not Use)
+- `src/lib/supabase/middleware.ts` - Replaced by centralized `src/middleware.ts`
+- `src/lib/security/rate-limit.ts` - Replaced by `src/lib/security/rateLimit.ts`
+- Any Express.js middleware or route handlers - Use Next.js App Router instead
+
+## Logging Implementation
+
+### Core Logger
+Located at `src/lib/utils/logger.ts`
+
+**Features:**
+- Multiple log levels: debug, info, warn, error, security
+- Structured JSON logging
+- Request tracing with unique IDs
+- Error handling with stack traces in development
+- Production-safe error messages
+- Performance monitoring
+
+**Usage:**
+```typescript
+import { logger } from '@/lib/utils/logger';
+
+// Basic logging
+logger.info('User logged in', { userId: '123' });
+
+// Error handling
+try {
+  // ...
+} catch (error) {
+  logger.error('Failed to process request', { error });
+}
+
+// Security events
+logger.security('login_failed', { 
+  userId: '123',
+  ip: '192.168.1.1',
+  userAgent: 'Mozilla/5.0...'
+});
+```
+
+### Security Logger
+Located at `src/lib/security/securityLogger.ts`
+
+**Features:**
+- Tracks security-related events
+- Integrates with the main logger
+- Stores events in the database
+- Provides audit trail
+
+**Event Types:**
+- `login_success` - Successful user login
+- `login_failed` - Failed login attempt
+- `logout` - User logged out
+- `token_refresh` - Token was refreshed
+- `token_revoked` - Token was revoked
+- `password_changed` - User changed password
+- `session_revoked` - Session was revoked
+- `security_alert` - Security-related alert
+
+### Request Logging Middleware
+Use `createRequestLogger` to create a logger with request context:
+
+```typescript
+import { createRequestLogger } from '@/lib/utils/logger';
+
+export async function GET(req: Request) {
+  const logger = createRequestLogger(req);
+  
+  logger.info('Processing request');
+  // ...
+}
+```
+
+All API routes must rely on the centralized middleware and helpers, not per-route wrappers.
+
 This document outlines the security measures implemented in the application, including session management, CSRF protection, rate limiting, and monitoring.
 
 ## Table of Contents
@@ -82,7 +204,7 @@ Implements a robust CSRF protection system with the following features:
   - `maxAge: 86400` (24 hours)
 - **Token Validation**:
   - Required for all non-GET/HEAD/OPTIONS requests
-  - Must be provided in the `X-CSRF-Token` header
+  - Must be provided in the header defined by `CSRF_HEADER_NAME` (`x-csrf-token`, lower-case)
   - Validated against the token stored in the session cookie
 
 ### Sensitive Endpoints (Token Rotation)
@@ -97,7 +219,7 @@ Implements a robust CSRF protection system with the following features:
 
 ### Configuration
 
-Implemented in `src/middleware.ts` with in-memory rate limiting (Redis recommended for production).
+Implemented in `src/lib/security/rateLimit.ts` with Redis (Upstash) support and in-memory fallback. Integrated by `src/middleware.ts`.
 
 | Endpoint | Limit | Window | Description |
 |----------|-------|--------|-------------|
@@ -154,7 +276,7 @@ All security-relevant events are logged with the following information:
 
 Security middleware is implemented in `src/middleware.ts` and includes:
 - CSRF protection
-- Rate limiting
+- Rate limiting (via `src/lib/security/rateLimit.ts`)
 - Request validation
 - Security headers
 - Error handling
@@ -175,6 +297,37 @@ All database access follows these security principles:
 2. **Row-Level Security (RLS)**: Enabled on all tables
 3. **Least Privilege**: Service roles have minimal required permissions
 4. **Input Validation**: All inputs are validated before processing
+
+### Centralized RBAC & Role Management
+
+RBAC is fully centralized and enforced across the app with the following constraints and utilities:
+
+- **RPC-only role fetching**: Roles are fetched exclusively via Postgres RPCs. No direct `user_roles` table reads are allowed.
+  - Primary RPCs: `get_user_roles(p_user_id uuid)`, `my_roles()` and `is_user_admin(p_user_id uuid)` for admin checks.
+  - Implementation: `src/lib/security/roles.ts` → `fetchUserRoles(userId)` with in-memory caching (TTL 5 minutes), retry/backoff, and invalidation.
+
+- **Role precedence and routing**:
+  - Precedence: `admin > member > volunteer > donor > viewer`.
+  - Implementation: `src/utils/roleUtils.ts` → `getHighestRole(roles)` and `getDashboardPathForRole(role)`.
+
+- **Role-aware redirects in middleware**:
+  - `src/middleware.ts` resolves the destination dashboard using `get_user_roles` RPC.
+  - Authenticated visits to `/signin` and `/dashboard` are redirected to the computed role dashboard.
+  - An optional `active-role` cookie is honored if it matches a role the user actually has; otherwise the highest role is used.
+
+- **Centralized sidebars with SSR**:
+  - `src/components/sidebar/Sidebar.tsx` is a server component that fetches roles via RPC and renders `AdminSidebar` vs `NonAdminSidebar` accordingly.
+  - Includes a `RoleSwitcher` client component to switch and persist an allowed role via `/api/role/switch`.
+
+- **Caching & invalidation**:
+  - In-memory cache key: `roles:${userId}`, TTL: 5 minutes.
+  - Invalidation helpers: `invalidateUserRoles(userId)`, `invalidateAllRoles()`.
+  - Optional realtime listeners to invalidate on `public.user_roles` changes and session revocations in `public.sessions`.
+
+- **Express Role Service deprecation**:
+  - Express-based role middleware is deprecated and no longer used in App Router.
+  - File retained as a stub for backward compatibility: `src/middleware/roleService.ts` (throws on use).
+  - All new code must use the centralized utilities and Next.js middleware.
 
 ## Usage Guidelines
 
@@ -411,6 +564,7 @@ Key metrics to monitor:
   - Required for all non-GET, non-HEAD, non-OPTIONS requests
   - Validates token presence and format
   - Compares token from header with cookie value using constant-time comparison
+  - New token rotation header is exposed as `CSRF_NEW_TOKEN_HEADER` (client reads this header if needed)
 
 ## Usage Guidelines
 
@@ -563,10 +717,9 @@ npm test src/__tests__/security/csrf.test.ts
 
 ## Rate Limiting
 
-Rate limiting is implemented to prevent brute force attacks. The current configuration allows:
+Rate limiting is implemented to prevent brute force attacks and abuse. The canonical implementation lives in `src/lib/security/rateLimit.ts` and is applied by `src/middleware.ts`.
 
-- 10 requests per minute for authentication endpoints
-- 100 requests per minute for API endpoints
+All API routes must be App Router routes under `src/app/api/**` and return standardized JSON errors. Express-style routes under `src/routes/**` are no longer supported.
 
 ## Session Management
 

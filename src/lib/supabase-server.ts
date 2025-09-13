@@ -1,4 +1,4 @@
-import { createServerClient } from './supabaseClient';
+import { createClient as createServerClient } from './supabase/server';
 
 // Create a server client instance
 const supabaseServerClient = createServerClient();
@@ -6,5 +6,5 @@ const supabaseServerClient = createServerClient();
 // Export the server client
 export { supabaseServerClient as supabase };
 
-// For backward compatibility
-export { createServerClient };
+// For backward compatibility, export a getter function
+export const getServerSupabaseClient = () => createServerClient();

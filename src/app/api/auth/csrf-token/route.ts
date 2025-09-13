@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { logger } from '@/lib/utils/logger';
 
 export async function GET() {
   try {
@@ -51,10 +52,8 @@ export async function GET() {
     });
 
   } catch (error) {
-    console.error('CSRF token error:', error);
-    return NextResponse.json(
-      { error: 'Failed to generate CSRF token' },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : 'Failed to generate CSRF token';
+    logger.error(`[Auth] CSRF token error: ${message}`);
+    return NextResponse.json({ error: 'Failed to generate CSRF token' }, { status: 500 });
   }
 }

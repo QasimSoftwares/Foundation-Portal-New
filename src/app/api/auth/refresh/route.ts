@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
-import { sessionManager } from '@/security/session/sessionManager';
 import { securityLogger } from '@/lib/security/securityLogger';
 import { getClientIp } from '@/lib/utils/ip-utils';
 import { supabase } from '@/lib/supabase/client';
+import { logger } from '@/lib/utils/logger';
 
 export async function POST(request: Request) {
   const forwardedFor = request.headers.get('x-forwarded-for');
@@ -73,31 +73,10 @@ export async function POST(request: Request) {
       throw new Error(refreshError?.message || 'Failed to refresh session');
     }
 
-    // Set cookies using the session manager's config
-    const cookieOptions = {
-      httpOnly: true,
-      secure: sessionManager.getSecureCookies(),
-      sameSite: sessionManager.getSameSite(),
-      path: '/',
-    };
-
-    // Set access token cookie
-    response.cookies.set({
-      name: sessionManager.getAccessTokenCookieName(),
-      value: newSession.access_token,
-      ...cookieOptions,
-      maxAge: sessionManager.getAccessTokenMaxAge(),
-    });
-
-    // Set refresh token cookie if available
-    if (newSession.refresh_token) {
-      response.cookies.set({
-        name: sessionManager.getRefreshTokenCookieName(),
-        value: newSession.refresh_token,
-        ...cookieOptions,
-        maxAge: sessionManager.getRefreshTokenMaxAge(),
-      });
-    }
+    // Note: The original code used a sessionManager which is deprecated.
+    // We are now setting cookies directly. The Supabase client's `set` and `remove` handlers for cookies already manage this.
+    // The refreshSession call above triggers the `set` handler in the createServerClient config, which updates the cookies on the `response` object.
+    // No manual cookie setting is needed here as it's handled by the Supabase SSR client.
 
     // Log the successful token refresh
     if (user?.id) {
@@ -111,7 +90,7 @@ export async function POST(request: Request) {
     return response;
     
   } catch (error: any) {
-    console.error('Error refreshing token:', error);
+    logger.error(`Error refreshing token: ${error?.message || String(error)}`);
     
     // Log the error
     await securityLogger.logSecurityAlert(

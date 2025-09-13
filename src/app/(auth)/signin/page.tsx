@@ -1,8 +1,10 @@
 'use client';
 
 import { Suspense, useState } from 'react';
+import Image from 'next/image';
 import { supabase } from '@/lib/supabase/client';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 import { useForm } from 'react-hook-form';
 import { fetchWithCSRF } from '@/lib/http/csrf-interceptor';
 import { z } from 'zod';
@@ -30,7 +32,12 @@ function SignInContent() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams?.get('callbackUrl') || '/dashboard';
+  const { syncSession } = useAuth();
+  // Only use callbackUrl if it's a relative path to prevent open redirects
+  const callbackUrl = (() => {
+    const url = searchParams?.get('callbackUrl') || '';
+    return url && url.startsWith('/') ? url : '/dashboard';
+  })();
   
   // The CSRF token is automatically handled by the fetchWithCSRF wrapper
 
@@ -45,9 +52,28 @@ function SignInContent() {
   const onSubmit = async (data: SignInFormData) => {
     setIsLoading(true);
     setLoginError(null); // Clear previous errors
+    const toastId = toast.loading('Signing in...');
     console.log('Starting sign in...', { email: data.email });
     
     try {
+      // CSRF preflight: if the CSRF cookie is missing, issue a HEAD request to
+      // prime it via middleware before the credentialed POST. This avoids the
+      // "first request only sets CSRF" handshake requiring a second submit.
+      const hasCSRFCookie = typeof document !== 'undefined' && document.cookie.includes('sb-csrf-token=');
+      if (!hasCSRFCookie) {
+        try {
+          await fetch(window.location.pathname, {
+            method: 'HEAD',
+            credentials: 'include',
+          });
+          // small delay to let the browser commit Set-Cookie
+          await new Promise((r) => setTimeout(r, 75));
+        } catch (e) {
+          // Non-fatal: continue to attempt sign-in
+          console.warn('CSRF preflight failed, continuing to sign-in', e);
+        }
+      }
+
       console.log('Making sign-in request...');
       const response = await fetchWithCSRF('/api/auth/signin', {
         method: 'POST',
@@ -108,11 +134,16 @@ function SignInContent() {
         }
       }
       
-      console.log('Sign in successful, setting client session...');
+      console.log('Sign in successful...');
       // Show success message
-      toast.success('You have been signed in successfully');
+      toast.success('You have been signed in successfully', { id: toastId });
 
-      // Ensure the browser-side Supabase client has a session
+
+      const apiDashboardPath = (responseData as any)?.dashboard;
+      const finalRedirectPath = (apiDashboardPath && apiDashboardPath.startsWith('/')) ? apiDashboardPath : callbackUrl;
+
+      // Manually set the session on the client to immediately trigger the AuthProvider's listener.
+      // This is critical for the first sign-in to ensure the session is available before navigating.
       const sessionTokens = (responseData as any)?.session;
       if (sessionTokens?.access_token && sessionTokens?.refresh_token) {
         const { error: setSessionError } = await supabase.auth.setSession({
@@ -120,14 +151,16 @@ function SignInContent() {
           refresh_token: sessionTokens.refresh_token,
         });
         if (setSessionError) {
-          console.error('Failed to set Supabase client session:', setSessionError);
+          // Log the error but don't block the redirect, as the cookies are still set.
+          console.error('Failed to set Supabase client session', { error: setSessionError });
         }
       } else {
         console.warn('No session tokens returned from API to set client session');
       }
 
-      // Redirect to the intended destination (callbackUrl defaults to /dashboard)
-      window.location.href = callbackUrl;
+      // Manually set the session to trigger the AuthProvider's onAuthStateChange listener
+      // which will handle the redirect automatically
+      await syncSession(); // This will trigger SIGNED_IN event and automatic redirect
     } catch (error: unknown) {
       console.error('Sign in error:', error);
       let errorMessage = 'An unknown error occurred';
@@ -146,7 +179,7 @@ function SignInContent() {
         console.error('Error details:', error);
       }
       
-      toast.error(`Sign in failed: ${errorMessage}`);
+      toast.error(`Sign in failed: ${errorMessage}`, { id: toastId });
     } finally {
       setIsLoading(false);
     }
@@ -168,11 +201,15 @@ function SignInContent() {
   return (
     <div className="w-full max-w-md mx-auto">
       <div className="flex flex-col items-center space-y-4 mb-8">
-        <div className="w-24 h-24 relative">
-          <img 
+        <div className="w-24 h-24 relative flex items-center justify-center">
+          <Image 
             src="/logo.png" 
             alt="Family And Fellows Foundation Logo" 
-            className="w-full h-full object-contain"
+            width={96}
+            height={96}
+            className="w-auto h-auto max-w-full max-h-full object-contain"
+            priority
+            style={{ width: 'auto', height: 'auto' }}
           />
         </div>
         <h1 className="text-2xl font-bold text-gray-900 text-center">
@@ -275,7 +312,6 @@ function SignInContent() {
                 type="submit"
                 className="w-full py-2.5 text-sm font-medium rounded-lg shadow-sm text-white bg-brand-blue hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-blue/50 disabled:opacity-50 transition-colors duration-200"
                 disabled={isLoading}
-                onClick={() => toast.loading('Signing in...')}
                 suppressHydrationWarning
               >
                 {isLoading ? (

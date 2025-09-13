@@ -1,5 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
-import { logger } from '@/lib/logger';
+import { logger } from '@/lib/utils/logger';
+
+// Re-export the logger for backward compatibility
+export { logger };
 
 export type SecurityEventType = 
   | 'login_success'
@@ -24,6 +27,7 @@ class SecurityLogger {
   private static instance: SecurityLogger;
   private supabase: ReturnType<typeof createClient>;
   private enabled: boolean = true;
+  private logger = logger;
 
   private constructor() {
     this.supabase = createClient(
@@ -47,6 +51,14 @@ class SecurityLogger {
 
   public async logEvent(event: SecurityEvent): Promise<void> {
     if (!this.enabled) return;
+    
+    // Log to console and monitoring
+    this.logger.security(event.event_type, {
+      userId: event.user_id,
+      ip: event.ip,
+      userAgent: event.ua_hash ? `hashed:${event.ua_hash}` : undefined,
+      metadata: event.metadata,
+    });
 
     try {
       const eventData: any = {
@@ -63,12 +75,11 @@ class SecurityLogger {
 
       if (error) {
         const logError = new Error(`Failed to log security event: ${error.message}`);
-        logger.error(logError.message, logError, { event });
+        logger.error(`[SecurityLogger] ${logError.message} type=${event.event_type} user=${event.user_id ?? 'n/a'}`);
       }
     } catch (error: any) {
-      logger.error('Unexpected error in security logger', error, {
-        stack: error.stack
-      });
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error(`[SecurityLogger] Unexpected error: ${msg}`);
     }
   }
 

@@ -1,9 +1,10 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
-import { SupabaseProvider } from '@/components/providers/supabase-provider';
 import { ToastProvider } from '@/components/providers/toast-provider';
 import { CSRFProvider } from '@/providers/CSRFProvider';
+import RoleHydrator from '@/components/roles/RoleHydrator';
+import { AuthProvider } from '@/contexts/AuthContext';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -21,11 +22,13 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <CSRFProvider>
-          <SupabaseProvider>
-            <ToastProvider>
-              {children}
-            </ToastProvider>
-          </SupabaseProvider>
+          <AuthProvider>
+            <RoleHydrator>
+              <ToastProvider>
+                {children}
+              </ToastProvider>
+            </RoleHydrator>
+          </AuthProvider>
         </CSRFProvider>
       </body>
     </html>

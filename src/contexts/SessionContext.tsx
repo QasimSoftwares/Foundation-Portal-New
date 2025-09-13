@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { useToast } from '@/components/ui/use-toast';
-import { supabaseClient } from '@/lib/supabaseClient';
+import { supabase } from '@/lib/supabase/client';
 import { sessionSync } from '@/lib/sessionSync';
 
 // Session timeout values (in milliseconds)
@@ -67,7 +67,7 @@ export const SessionProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Handle user logout
   const handleLogout = useCallback(async (fromSync = false) => {
     try {
-      await supabaseClient.auth.signOut();
+      await supabase.auth.signOut();
       
       // Only redirect and show toast if not from sync (to prevent multiple toasts)
       if (!fromSync) {

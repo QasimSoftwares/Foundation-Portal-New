@@ -78,14 +78,19 @@ export default function ProfilePage() {
       }
 
       // Use the new get_complete_profile RPC
+      console.log('Fetching profile data...');
       const { data: response, error } = await supabase
         .rpc('get_complete_profile');
 
+      console.log('RPC Response:', { response, error });
+
       if (error) {
+        console.error('RPC Error:', error);
         throw error;
       }
 
       if (response?.success && response.data) {
+        console.log('Profile data received:', response.data);
         const profileData = response.data;
         // Parse the address if it exists
         const address = typeof profileData.address === 'string' 

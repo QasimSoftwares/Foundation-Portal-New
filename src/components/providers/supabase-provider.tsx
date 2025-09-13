@@ -5,6 +5,7 @@ import { Session, User } from '@supabase/supabase-js';
 import { useRouter } from 'next/navigation';
 import { useCSRFContext } from '@/providers/CSRFProvider';
 import createClient from '@/lib/supabase/client';
+import { getRedirectPathForUser } from '@/lib/security/roles';
 
 const supabase = createClient();
 
@@ -63,6 +64,11 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
 
       // Also sign out client-side to clear any in-memory state in Supabase client
       await supabase.auth.signOut();
+
+      // Force a full reload to ensure all httpOnly cookies are gone and middleware re-evaluates
+      if (typeof window !== 'undefined') {
+        window.location.href = '/signin';
+      }
     } catch (error) {
       console.error('Error signing out:', error);
       throw error; // Re-throw to be handled by the component
@@ -74,15 +80,25 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
     refreshSession();
 
     // Set up auth state change listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      
-      // Redirect based on auth state changes
-      if (event === 'SIGNED_IN') {
-        router.push('/dashboard');
-      } else if (event === 'SIGNED_OUT') {
-        router.push('/signin');
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      try {
+        setSession(session);
+        setUser(session?.user ?? null);
+
+        // Redirect based on auth state changes
+        if (event === 'SIGNED_IN' && session?.user) {
+          try {
+            const redirectPath = await getRedirectPathForUser(session.user.id);
+            router.push(redirectPath);
+          } catch (error) {
+            console.error('Error getting redirect path:', error);
+            router.push('/dashboard'); // Fallback redirect
+          }
+        } else if (event === 'SIGNED_OUT') {
+          router.push('/signin');
+        }
+      } catch (error) {
+        console.error('Error in auth state change:', error);
       }
     });
 

@@ -10,7 +10,7 @@ import { ErrorBoundary } from 'react-error-boundary';
 import { ErrorFallback } from '@/components/error/ErrorFallback';
 import { fetchWithCSRF } from '@/lib/http/csrf-interceptor';
 
-type VerificationStatus = 'verifying' | 'success' | 'error';
+type VerificationStatus = 'verifying' | 'success' | 'error' | 'pending';
 
 function VerifyEmailContent() {
   const searchParams = useSearchParams();
@@ -69,7 +69,15 @@ function VerifyEmailContent() {
       const type = searchParams?.get('type');
       const email = searchParams?.get('email');
 
-      if (!token || !type) {
+      // If there's no token but there is an email, it means we came from signup
+      // and we should show the verification pending message
+      if (!token && email) {
+        setStatus('pending');
+        return;
+      }
+
+      // If there's a token but no type, or no token and no email, it's an invalid link
+      if ((token && !type) || (!token && !email)) {
         setStatus('error');
         setError('Invalid verification link. Please check the link or request a new one.');
         return;
@@ -135,6 +143,53 @@ function VerifyEmailContent() {
             <p className="mt-2 text-sm text-gray-600">
               Please wait while we verify your email address...
             </p>
+          </div>
+        </div>
+      </ErrorBoundary>
+    );
+  }
+
+  if (status === 'pending') {
+    return (
+      <ErrorBoundary FallbackComponent={ErrorFallback}>
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-md w-full space-y-8">
+            <div className="text-center">
+              <div className="flex justify-center">
+                <div className="rounded-full bg-blue-100 p-3">
+                  <MailIcon className="h-12 w-12 text-blue-600" />
+                </div>
+              </div>
+              <h2 className="mt-6 text-2xl font-bold text-gray-900">
+                Check your email
+              </h2>
+              <p className="mt-2 text-sm text-gray-600">
+                We've sent a verification link to <span className="font-medium">{searchParams?.get('email')}</span>. 
+                Please check your inbox and click the link to verify your email address.
+              </p>
+            </div>
+            
+            <div className="space-y-4">
+              <Button 
+                variant="outline"
+                className="w-full"
+                onClick={handleResendVerification}
+                disabled={isResending}
+              >
+                {isResending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  'Resend verification email'
+                )}
+              </Button>
+              
+              <p className="text-sm text-gray-500">
+                Didn't receive the email? Check your spam folder or try resending.
+              </p>
+            </div>
           </div>
         </div>
       </ErrorBoundary>

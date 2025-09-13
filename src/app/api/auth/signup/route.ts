@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
+import { logger } from '@/lib/utils/logger';
 import { createServerClient } from '@supabase/ssr';
-import { sessionManager } from '@/security/session/sessionManager';
+import { cookies } from 'next/headers';
 
 export async function POST(request: Request) {
   try {
@@ -91,31 +91,8 @@ export async function POST(request: Request) {
     const res = NextResponse.json(responseBody, { status: 201 });
     
     if (data.session) {
-      // Set cookies using the session manager's config
-      const cookieOptions = {
-        httpOnly: true,
-        secure: sessionManager.getSecureCookies(),
-        sameSite: sessionManager.getSameSite(),
-        path: '/',
-      };
-
-      // Set access token cookie
-      res.cookies.set({
-        name: sessionManager.getAccessTokenCookieName(),
-        value: data.session.access_token,
-        ...cookieOptions,
-        maxAge: sessionManager.getAccessTokenMaxAge(),
-      });
-
-      // Set refresh token cookie if available
-      if (data.session.refresh_token) {
-        res.cookies.set({
-          name: sessionManager.getRefreshTokenCookieName(),
-          value: data.session.refresh_token,
-          ...cookieOptions,
-          maxAge: sessionManager.getRefreshTokenMaxAge(),
-        });
-      }
+      // Note: The Supabase client's `set` handler for cookies will manage setting the auth tokens if a session is created.
+      // The signUp call above triggers the `set` handler in the createServerClient config.
     }
 
     return res;

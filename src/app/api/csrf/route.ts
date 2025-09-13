@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { logger } from '@/lib/utils/logger';
 import { cookies } from 'next/headers';
 
 export async function GET() {
@@ -20,10 +21,8 @@ export async function GET() {
     });
 
   } catch (error) {
-    console.error('CSRF token error:', error);
-    return NextResponse.json(
-      { error: 'Failed to retrieve CSRF token' },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : 'Failed to retrieve CSRF token';
+    logger.error(`[CSRF] token retrieval error: ${message}`);
+    return NextResponse.json({ error: 'Failed to retrieve CSRF token' }, { status: 500 });
   }
 }

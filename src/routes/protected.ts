@@ -1,3 +1,5 @@
+// DEPRECATED: Express-style routes are no longer used. Migrate to App Router under src/app/api/*.
+throw new Error('Deprecated: src/routes/protected.ts is not used. Implement under App Router (src/app/api/*).');
 import { Router, Request, Response } from 'express';
 
 /**

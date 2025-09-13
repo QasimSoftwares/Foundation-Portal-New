@@ -1,10 +1,41 @@
-// Route configurations for middleware
-type PublicExactRoutes = '/' | '/api/health' | '/api/auth/csrf-token';
-type PublicStartsWith = '/_next' | '/static' | '/api/auth/' | '/auth/' | '/signin' | '/signup' | '/forgot-password' | '/reset-password' | '/verify-email';
-type ProtectedStartsWith = '/dashboard' | '/api/dashboard' | '/profile' | '/api/profile' | '/settings' | '/api/settings' | '/donor-request' | '/api/donor-request';
-type SensitiveExactRoutes = '/api/auth/signin' | '/api/auth/signup' | '/api/auth/forgot-password' | '/api/auth/reset-password' | '/api/auth/verify-email' | '/api/auth/change-password';
-type AdminStartsWith = '/admin' | '/api/admin';
+// Centralized route configuration
 
+// Base route types
+type PublicExactRoutes = '/' | '/api/health' | '/api/auth/csrf-token';
+type PublicStartsWith = 
+  | '/_next' 
+  | '/static' 
+  | '/api/auth/' 
+  | '/auth/' 
+  | '/signin' 
+  | '/signup' 
+  | '/forgot-password' 
+  | '/reset-password' 
+  | '/verify-email';
+
+type ProtectedStartsWith = 
+  | '/dashboard' 
+  | '/api/dashboard' 
+  | '/profile' 
+  | '/api/profile' 
+  | '/settings' 
+  | '/api/settings' 
+  | '/donor-request' 
+  | '/api/donor-request';
+
+type SensitiveExactRoutes = 
+  | '/api/auth/signin' 
+  | '/api/auth/signup' 
+  | '/api/auth/forgot-password' 
+  | '/api/auth/reset-password' 
+  | '/api/auth/verify-email' 
+  | '/api/auth/change-password';
+
+type AdminStartsWith = 
+  | '/admin' 
+  | '/api/admin';
+
+// Base route configuration
 export const ROUTE_CONFIG = {
   // Public routes that don't require authentication
   public: {
@@ -26,6 +57,9 @@ export const ROUTE_CONFIG = {
   protected: {
     startsWith: [
       '/dashboard',
+      '/donor/dashboard',
+      '/volunteer/dashboard',
+      '/member/dashboard',
       '/api/dashboard',
       '/profile',
       '/api/profile',
@@ -33,7 +67,7 @@ export const ROUTE_CONFIG = {
       '/api/settings',
       '/donor-request',
       '/api/donor-request'
-    ]
+    ] as const
   },
   
   // Sensitive endpoints that require additional protection
@@ -50,9 +84,56 @@ export const ROUTE_CONFIG = {
   
   // Admin routes that require admin privileges
   admin: {
-    startsWith: ['/admin', '/api/admin']
+    startsWith: ['/admin', '/api/admin'] as const
   }
 } as const;
+
+// Admin route definitions
+export const ADMIN_ROUTES = {
+  // Dashboard
+  dashboard: '/admin/dashboard',
+  
+  // Management sections
+  donors: '/admin/donors',
+  volunteers: '/admin/volunteers',
+  members: '/admin/members',
+  donations: '/admin/donations',
+  
+  // System
+  reports: '/admin/reports',
+  settings: '/admin/settings',
+  
+  // API endpoints
+  api: {
+    donors: '/api/admin/donors',
+    volunteers: '/api/admin/volunteers',
+    members: '/api/admin/members',
+    donations: '/api/admin/donations',
+    reports: '/api/admin/reports',
+    settings: '/api/admin/settings',
+    
+    // Batch operations
+    import: '/api/admin/import',
+    export: '/api/admin/export',
+    
+    // System operations
+    maintenance: '/api/admin/maintenance',
+    cache: '/api/admin/cache',
+  }
+} as const;
+
+// Role-based dashboard paths
+export const ROLE_DASHBOARDS = {
+  admin: '/admin/dashboard',
+  member: '/member/dashboard',
+  volunteer: '/volunteer/dashboard',
+  viewer: '/dashboard',
+  donor: '/donor/dashboard'
+} as const;
+
+type ValueOf<T> = T[keyof T];
+
+export type AdminRoute = ValueOf<typeof ADMIN_ROUTES> | ValueOf<typeof ADMIN_ROUTES.api>;
 
 // Rate limit configuration type
 type RateLimitConfig = {

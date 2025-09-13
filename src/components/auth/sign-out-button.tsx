@@ -1,29 +1,34 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase/client';
+import { Button, ButtonProps } from '@/components/ui/button';
+import { useAuth } from '@/contexts/AuthContext';
+import { ReactNode } from 'react';
 
-export function SignOutButton() {
-  const router = useRouter();
+interface SignOutButtonProps extends Omit<ButtonProps, 'onClick'> {
+  children?: ReactNode;
+}
+
+export function SignOutButton({ 
+  className, 
+  children = 'Sign Out',
+  variant = 'outline',
+  ...props 
+}: SignOutButtonProps) {
+  const { signOut } = useAuth();
 
   const handleSignOut = async () => {
-    try {
-      await supabase.auth.signOut();
-      router.push('/signin');
-      router.refresh();
-    } catch (error) {
-      console.error('Error signing out:', error);
-    }
+    await signOut();
+    // The signOut function from useAuth will handle session clearing and redirection.
   };
 
   return (
     <Button 
-      variant="outline" 
-      className="w-full"
+      variant={variant}
+      className={className}
       onClick={handleSignOut}
+      {...props}
     >
-      Sign Out
+      {children}
     </Button>
   );
 }

@@ -92,31 +92,3 @@ declare global {
     }
   }
 }
-  }
-}
-  }
-}
-
-declare module '@supabase/supabase-js' {
-  interface SupabaseClient {
-    rpc<T = any>(
-      fn: string,
-      params?: Record<string, any>,
-      options?: {
-        head?: boolean;
-        count?: 'exact' | 'planned' | 'estimated';
-      }
-    ): Promise<{
-      data: T | null;
-      error: any;
-      status: number;
-      statusText: string;
-    }>;
-
-    auth: {
-      admin: {
-        signOut: (userId: string) => Promise<{ error?: Error }>;
-      };
-    };
-  }
-}

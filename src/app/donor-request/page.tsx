@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/components/ui/use-toast';
 import { Loader2 } from 'lucide-react';
+import { getRedirectPathForUser } from '@/lib/security/roles';
 
 const formSchema = z.object({
   fullName: z.string().min(2, 'Full name is required'),
@@ -163,7 +164,8 @@ export default function DonorRequestPage() {
       });
 
       // Use window.location to ensure full page reload and proper auth state
-      window.location.href = '/dashboard';
+      const redirectPath = await getRedirectPathForUser(session.user.id);
+      window.location.href = redirectPath;
     } catch (error) {
       console.error('Error submitting donor request:', error);
       toast({

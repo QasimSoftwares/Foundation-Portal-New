@@ -1,3 +1,5 @@
+// Deprecated: Use '@/lib/security/rateLimit' instead. This file is not used.
+throw new Error("Deprecated: Use '@/lib/security/rateLimit' as the canonical limiter (integrated via src/middleware.ts)");
 import { NextRequest, NextResponse } from 'next/server';
 
 type RateLimitConfig = {

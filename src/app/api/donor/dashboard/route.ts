@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/supabase/middleware';
+// Access control is enforced centrally in src/middleware.ts. No per-route wrappers.
 
 async function handler(req: NextRequest) {
   return NextResponse.json({
@@ -13,6 +13,6 @@ async function handler(req: NextRequest) {
   });
 }
 
-export const GET = requirePermission('donor')(handler);
+export const GET = handler;
 
 export const dynamic = 'force-dynamic';

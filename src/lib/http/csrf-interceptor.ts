@@ -2,11 +2,12 @@
 
 import { useEffect } from 'react';
 import { getCookie } from 'cookies-next';
+import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME, CSRF_NEW_TOKEN_HEADER } from '@/lib/security/csrf';
 
 // Helper to safely get CSRF token
 const getCSRFToken = async (): Promise<string | null> => {
   try {
-    const token = await getCookie('sb-csrf-token');
+    const token = await getCookie(CSRF_COOKIE_NAME);
     return token?.toString() || null;
   } catch (error) {
     console.error('Error getting CSRF token:', error);
@@ -33,10 +34,10 @@ export function useCSRFInterceptor() {
       const headers = new Headers(init?.headers);
       
       // Add CSRF token for non-read operations
-      if (!isReadOnly && !headers.has('X-CSRF-Token')) {
+      if (!isReadOnly && !headers.has(CSRF_HEADER_NAME)) {
         const csrfToken = await getCSRFToken();
         if (csrfToken) {
-          headers.set('X-CSRF-Token', csrfToken);
+          headers.set(CSRF_HEADER_NAME, csrfToken);
         }
       }
 
@@ -48,7 +49,7 @@ export function useCSRFInterceptor() {
       });
 
       // Handle token rotation
-      const newCSRFToken = response.headers.get('X-New-CSRF-Token');
+      const newCSRFToken = response.headers.get(CSRF_NEW_TOKEN_HEADER);
       if (newCSRFToken) {
         // The new token will be automatically set by the browser via Set-Cookie
         // We don't need to do anything here as the cookie is httpOnly
@@ -79,10 +80,10 @@ export async function fetchWithCSRF(
   const headers = new Headers(init?.headers);
   
   // Add CSRF token for non-read operations
-  if (!isReadOnly && !headers.has('X-CSRF-Token')) {
+  if (!isReadOnly && !headers.has(CSRF_HEADER_NAME)) {
     const csrfToken = await getCSRFToken();
     if (csrfToken) {
-      headers.set('X-CSRF-Token', csrfToken);
+      headers.set(CSRF_HEADER_NAME, csrfToken);
     }
   }
 
