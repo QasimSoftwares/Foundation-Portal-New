@@ -220,6 +220,44 @@ export interface Database {
           updated_at?: string;
         };
       };
+      role_requests: {
+        Row: {
+          request_id: string
+          user_id: string
+          request_type: string
+          request_status: string
+          created_at: string
+          updated_at: string
+          notes: string | null
+          approved_by: string | null
+          approved_at: string | null
+          rejection_reason: string | null
+        }
+        Insert: {
+          request_id?: string
+          user_id: string
+          request_type: string
+          request_status?: string
+          created_at?: string
+          updated_at?: string
+          notes?: string | null
+          approved_by?: string | null
+          approved_at?: string | null
+          rejection_reason?: string | null
+        }
+        Update: {
+          request_id?: string
+          user_id?: string
+          request_type?: string
+          request_status?: string
+          created_at?: string
+          updated_at?: string
+          notes?: string | null
+          approved_by?: string | null
+          approved_at?: string | null
+          rejection_reason?: string | null
+        }
+      }
       user_roles: {
         Row: {
           user_id: string;
@@ -258,6 +296,26 @@ export interface Database {
       [_ in never]: never;
     };
     Functions: {
+      get_pending_role_requests: {
+        Args: Record<string, never>
+        Returns: {
+          request_id: string
+          user_id: string
+          request_type: string
+          status: string
+          created_at: string
+          full_name: string
+          email: string
+        }[]
+      }
+      handle_role_request: {
+        Args: {
+          p_request_id: string
+          p_action: string
+          p_role: string
+        }
+        Returns: Json
+      }
       get_user_role: {
         Args: {
           user_id: string;

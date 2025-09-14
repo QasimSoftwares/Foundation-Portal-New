@@ -9,6 +9,10 @@ import { Loader2 } from 'lucide-react';
 type PageLayoutProps = {
   children: ReactNode;
   /**
+   * Page title to display in the layout
+   */
+  title?: string;
+  /**
    * Whether to show the sidebar. Defaults to true.
    * Set to false for full-width pages like login.
    */
@@ -26,6 +30,7 @@ type PageLayoutProps = {
 
 export function PageLayout({
   children,
+  title,
   showSidebar = true,
   contentClassName = '',
   requireAuth = true,
@@ -44,21 +49,21 @@ export function PageLayout({
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <TopNav />
-      <div className="flex flex-1 overflow-hidden pt-14">
+      <div className="flex pt-14 h-[calc(100vh-3.5rem)]">
         {showSidebar && <Sidebar />}
         <main 
-          className={cn(
-            'flex-1 overflow-y-auto p-4 lg:p-5',
-            showSidebar ? 'ml-64' : '',
-            contentClassName
-          )}
+          className={`flex-1 overflow-y-auto ${contentClassName} ${
+            showSidebar ? 'ml-64' : 'ml-0'
+          }`}
         >
-          <div className="max-w-7xl mx-auto w-full">
+          <div className="p-4">
+            {title && <h1 className="text-2xl font-bold mb-4">{title}</h1>}
             {children}
           </div>
         </main>
       </div>
     </div>
+
   );
 }
 
