@@ -56,6 +56,24 @@ function SignUpContent() {
   const onSubmit = async (data: FormData) => {
     setIsLoading(true);
     try {
+      // CSRF preflight: if the CSRF cookie is missing, issue a HEAD request to
+      // prime it via middleware before the credentialed POST. This avoids the
+      // "first request only sets CSRF" handshake requiring a second submit.
+      const hasCSRFCookie = typeof document !== 'undefined' && document.cookie.includes('sb-csrf-token=');
+      if (!hasCSRFCookie) {
+        try {
+          await fetch(window.location.pathname, {
+            method: 'HEAD',
+            credentials: 'include',
+          });
+          // small delay to let the browser commit Set-Cookie
+          await new Promise((r) => setTimeout(r, 75));
+        } catch (e) {
+          // Non-fatal: continue to attempt sign-up
+          console.warn('CSRF preflight failed, continuing to sign-up', e);
+        }
+      }
+
       const response = await fetchWithCSRF('/api/auth/signup', {
         method: 'POST',
         headers: {
@@ -67,12 +85,23 @@ function SignUpContent() {
           fullName: data.fullName,
           acceptTerms: data.acceptTerms,
         }),
+        credentials: 'include',
       });
 
-      const result = await response.json();
+      const result = await response.json().catch(() => ({} as any));
 
       if (!response.ok) {
-        throw new Error(result.message || 'Failed to create account');
+        if (response.status === 403) {
+          // CSRF token is invalid or missing; reload to obtain a fresh token
+          window.location.reload();
+          return;
+        } else if (response.status === 429) {
+          const retryAfter = response.headers.get('Retry-After');
+          throw new Error(
+            `Too many attempts. ${retryAfter ? `Please try again in ${retryAfter} seconds.` : 'Please try again later.'}`
+          );
+        }
+        throw new Error((result as any)?.message || (result as any)?.error?.message || 'Failed to create account');
       }
 
       // Show success message using the toast function from the hook

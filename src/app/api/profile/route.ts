@@ -1,41 +1,75 @@
 import { NextResponse } from 'next/server';
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { logger } from '@/lib/utils/logger';
 
-export async function GET() {
-  try {
-    // Create a Supabase client configured to use cookies
-    const cookieStore = cookies();
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
-    
-    // Get the user's session
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    if (!session?.user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+// GET handler to fetch the user's profile
+export async function GET(request: Request) {
+  const cookieStore = cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get: (name) => cookieStore.get(name)?.value,
+        set: (name, value, options) => cookieStore.set(name, value, options),
+        remove: (name, options) => cookieStore.set(name, '', options),
+      },
     }
-    
-    // Fetch user profile
-    const { data: profile, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .single();
+  );
 
-    if (error) throw error;
-    
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { data: profile, error } = await supabase.rpc('get_user_profile');
+
+    if (error) {
+      throw error;
+    }
+
     return NextResponse.json(profile);
   } catch (error) {
-    console.error('Profile fetch error:', error);
-    return NextResponse.json(
-      { error: 'Internal Server Error' },
-      { status: 500 }
-    );
+    const errorObj = error instanceof Error ? error : new Error('Unknown error');
+    logger.error('Profile fetch error:', { error: errorObj });
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
 
-// Export other HTTP methods as needed
-export { GET as POST, GET as PUT, GET as DELETE };
+// POST handler to update the user's profile
+export async function POST(request: Request) {
+  const cookieStore = cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get: (name) => cookieStore.get(name)?.value,
+        set: (name, value, options) => cookieStore.set(name, value, options),
+        remove: (name, options) => cookieStore.set(name, '', options),
+      },
+    }
+  );
+
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const profileData = await request.json();
+    const { error } = await supabase.rpc('update_user_profile', { ...profileData });
+
+    if (error) {
+      throw error;
+    }
+
+    return NextResponse.json({ success: true, message: 'Profile updated successfully.' });
+  } catch (error) {
+    const errorObj = error instanceof Error ? error : new Error('Unknown error');
+    logger.error('Profile update error:', { error: errorObj });
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
+}

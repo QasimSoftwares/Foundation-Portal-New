@@ -7,8 +7,8 @@ import { SignOutButton } from '@/components/auth/sign-out-button';
 
 export default function TopNav() {
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 border-b bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/60">
-      <div className="mx-auto flex h-14 max-w-screen-2xl items-center justify-between px-4">
+    <header className="fixed top-0 left-0 right-0 z-40 border-b bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+      <div className="flex h-14 items-center justify-between px-4 lg:px-6 w-full">
         {/* Left: Logo + Brand */}
         <DashboardLink className="flex items-center gap-3">
           <div className="relative w-8 h-8 flex items-center">

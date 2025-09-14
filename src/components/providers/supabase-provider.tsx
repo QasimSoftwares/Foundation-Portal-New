@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { useRouter } from 'next/navigation';
 import { useCSRFContext } from '@/providers/CSRFProvider';
@@ -27,6 +27,9 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
   // Use the singleton supabase client
   const router = useRouter();
   const { csrfToken } = useCSRFContext();
+  // Track initial session to avoid false redirects on token refresh / tab return
+  const hadSessionAtMountRef = useRef<boolean | null>(null);
+  const lastKnownUserIdRef = useRef<string | null>(null);
 
   const refreshSession = async (): Promise<void> => {
     try {
@@ -77,7 +80,11 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Initial session fetch
-    refreshSession();
+    (async () => {
+      await refreshSession();
+      hadSessionAtMountRef.current = !!(await supabase.auth.getSession()).data.session;
+      lastKnownUserIdRef.current = (await supabase.auth.getSession()).data.session?.user?.id ?? null;
+    })();
 
     // Set up auth state change listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -85,17 +92,32 @@ export function SupabaseProvider({ children }: { children: React.ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
 
-        // Redirect based on auth state changes
+        const userId = session?.user?.id ?? null;
+        const hadSessionAtMount = hadSessionAtMountRef.current === true;
+        const isAuthPage = typeof window !== 'undefined' && ['/signin', '/signup', '/'].includes(window.location.pathname);
+        const isRealNewLogin = event === 'SIGNED_IN' && (!hadSessionAtMount || !lastKnownUserIdRef.current);
+
+        // Update last known user id
+        lastKnownUserIdRef.current = userId;
+
+        // Redirect based on auth state changes with guards
         if (event === 'SIGNED_IN' && session?.user) {
-          try {
-            const redirectPath = await getRedirectPathForUser(session.user.id);
-            router.push(redirectPath);
-          } catch (error) {
-            console.error('Error getting redirect path:', error);
-            router.push('/dashboard'); // Fallback redirect
+          if (isRealNewLogin || isAuthPage) {
+            try {
+              const redirectPath = await getRedirectPathForUser(session.user.id);
+              router.push(redirectPath);
+            } catch (error) {
+              console.error('Error getting redirect path:', error);
+              router.push('/dashboard'); // Fallback redirect
+            }
+          } else {
+            // Ignore SIGNED_IN fired due to token refresh/rehydration
+            // No redirect
           }
         } else if (event === 'SIGNED_OUT') {
           router.push('/signin');
+        } else if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED') {
+          // Never redirect on these events; they can occur on tab focus
         }
       } catch (error) {
         console.error('Error in auth state change:', error);

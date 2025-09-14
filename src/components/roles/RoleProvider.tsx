@@ -17,27 +17,17 @@ import {
 
 // Shape of the role context
 type RoleContextState = {
-  // User's available roles
   roles: UserRole[];
-  // Currently active role (can be different from highest role if user switched)
   activeRole: UserRole | null;
-  // Loading state for role operations
   loading: boolean;
-  // Any error that occurred during role operations
   error: string | null;
-  // The effective role (active role if set, otherwise highest role)
   effectiveRole: UserRole | null;
-  // Whether the user has admin privileges
   isAdmin: boolean;
-  // Set the active role
-  setActiveRole: (role: UserRole) => Promise<void>;
-  // Refresh roles from the server and return the updated roles
+  // Set the active role and get the new dashboard path
+  setActiveRole: (role: UserRole) => Promise<{ dashboard: string }>;
   refresh: () => Promise<UserRole[]>;
-  // Check if user has a specific role
   hasRole: (role: UserRole) => boolean;
-  // Check if user has at least the specified role
   hasAtLeastRole: (role: UserRole) => boolean;
-  // Get the dashboard path for the current role
   getDashboardPath: () => string;
 };
 
@@ -160,28 +150,31 @@ export function RoleProvider({ children, initialRoles, initialActiveRole, sessio
   /**
    * Set the active role
    */
-  const setActiveRole = useCallback(async (role: UserRole) => {
+  const setActiveRole = useCallback(async (role: UserRole): Promise<{ dashboard: string }> => {
     if (!isValidRole(role)) {
-      logger.warn(`Attempted to set invalid role: ${role}`);
-      return;
+      const msg = `Attempted to set invalid role: ${role}`;
+      logger.warn(msg);
+      throw new Error(msg);
     }
     
     if (!roles.includes(role)) {
-      logger.warn(`User does not have the role: ${role}`);
-      return;
+      const msg = `User does not have the role: ${role}`;
+      logger.warn(msg);
+      throw new Error(msg);
     }
     
     try {
-      // Update the active role on the server
-      await fetchJSON('/api/role/switch', {
+      // Update the active role on the server and get the new dashboard path
+      const response = await fetchJSON<{ dashboard: string }>('/api/role/switch', {
         method: 'POST',
         body: JSON.stringify({ role })
       });
       
       // Update local state
       setActiveRoleState(role);
-      logger.debug('Active role updated', { role });
+      logger.debug('Active role updated on server', { role });
       
+      return response;
     } catch (err) {
       const errorObj = err instanceof Error ? err : new Error('Failed to switch role');
       logger.error('Failed to switch role', { error: errorObj });

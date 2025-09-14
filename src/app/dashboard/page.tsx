@@ -1,6 +1,15 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
+import { useRoleContext } from '@/components/roles/RoleProvider';
+
 export default function DashboardPage() {
+  const router = useRouter();
+  const { hasRole, isAdmin } = useRoleContext();
+
+  const canShowBecomeDonor = !isAdmin && !hasRole('donor');
+  const canShowBecomeVolunteer = !isAdmin && !hasRole('volunteer');
+  const canShowBecomeMember = !isAdmin && !hasRole('member');
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-8">
@@ -34,6 +43,40 @@ export default function DashboardPage() {
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
           <div className="space-y-3">
+            {/* Become a Donor (visible to non-admin, non-donor users) */}
+            {canShowBecomeDonor && (
+              <button
+                onClick={() => router.push('/donor-request')}
+                className="w-full flex items-center justify-between px-4 py-2 text-sm font-medium text-left text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+              >
+                <span>Become a Donor</span>
+                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            )}
+            {canShowBecomeVolunteer && (
+              <button
+                onClick={() => router.push('/volunteer-request')}
+                className="w-full flex items-center justify-between px-4 py-2 text-sm font-medium text-left text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+              >
+                <span>Become a Volunteer</span>
+                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            )}
+            {canShowBecomeMember && (
+              <button
+                onClick={() => router.push('/member-request')}
+                className="w-full flex items-center justify-between px-4 py-2 text-sm font-medium text-left text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors"
+              >
+                <span>Become a Member</span>
+                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            )}
             <button className="w-full flex items-center justify-between px-4 py-2 text-sm font-medium text-left text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-md transition-colors">
               <span>View Events</span>
               <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">

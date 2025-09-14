@@ -23,13 +23,10 @@ export default function Sidebar() {
   });
 
   return (
-    <aside className="w-64 border-r bg-white flex-shrink-0">
+    <aside className="fixed left-0 top-14 h-[calc(100vh-3.5rem)] w-64 border-r bg-white flex-shrink-0 z-30">
       <div className="flex h-full flex-col">
-        <div className="h-4">
-          {/* Minimal spacing at the top */}
-        </div>
         
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto py-2">
           {isAdminView ? (
             <AdminSidebar />
           ) : (
@@ -37,9 +34,10 @@ export default function Sidebar() {
           )}
         </div>
         
-        {/* Role switcher and sign out moved to top navigation */}
         <div className="border-t p-4">
-          {/* Additional sidebar footer content can go here */}
+          <div className="text-xs text-gray-500">
+            Family and Fellows Foundation
+          </div>
         </div>
       </div>
     </aside>

@@ -1,50 +1,86 @@
-# Supabase Usage Audit Report
+# Codebase Audit Report - September 14, 2025
 
-This report details the findings of an audit into the Supabase client usage, event handling, and session management within the codebase. The audit was initiated in response to warnings about multiple GoTrue/Supabase client events being registered and insecure session handling.
+This report details the findings of a comprehensive audit of the FPN codebase, focusing on centralization, consistency, and security. The audit was conducted to verify compliance with documented standards and identify areas for improvement.
 
-## 1. Supabase Client Instantiation
+## 1. Executive Summary
 
-**Finding:** The primary issue is the existence of multiple, conflicting client implementations. Client creation is not centralized, leading to redundant and inefficient client instantiation across the application.
+The application has a strong foundation with a centralized middleware (`src/middleware.ts`) that correctly handles most security concerns, including session management, CSRF protection, rate-limiting, and RBAC. The recent adoption of a `PageLayout` component has also improved UI consistency.
 
-*   **`src/lib/supabase/client.ts`**: Correctly implements a singleton pattern for the client-side client. This should be the single source of truth for all client-side Supabase interactions.
-*   **`src/lib/supabase/server.ts`**: Correctly creates server-side clients using `createServerComponentClient`. This should be the standard for all server-side logic.
-*   **`src/lib/supabaseClient.ts`**: This file is a major source of problems. It duplicates the functionality of the other two files and exports multiple client creation functions without a singleton pattern. It also instantiates clients at the module level, causing a new client to be created whenever the file is imported.
-*   **`src/lib/security/roles.ts`**: This utility file creates its own Supabase clients on the fly within the `fetchUserRoles` and `startRoleChangeListener` functions, bypassing any centralized client.
+However, the audit identified several critical and high-priority issues that undermine these strengths:
+- **Inconsistent Supabase Client Instantiation**: Multiple, conflicting client libraries and patterns are in use.
+- **Duplicated and Hardcoded Logic**: Key business logic, such as role-to-dashboard routing, is duplicated across the client and server.
+- **Confusing State Management**: The `active-role` is managed by both a client-side `localStorage` item and a server-side `httpOnly` cookie, leading to complex and buggy workarounds like forced page reloads.
+- **Security Vulnerability**: A critical vulnerability exists in the `/api/profile` route that bypasses CSRF protection for state-changing operations.
+- **Outdated Documentation**: The project's documentation is fragmented, outdated, and contains conflicting information.
 
-**Recommendation:**
+This report provides detailed findings and actionable recommendations to address these issues.
 
-1.  **Deprecate `src/lib/supabaseClient.ts`**: This file should be removed. All imports from this file should be updated to point to the correct centralized clients (`src/lib/supabase/client.ts` for client-side code and `src/lib/supabase/server.ts` for server-side code).
-2.  **Refactor `src/lib/security/roles.ts`**: The `fetchUserRoles` and `startRoleChangeListener` functions should be refactored to accept a Supabase client instance as an argument, or they should import the singleton client directly. They should not be creating their own clients.
+## 2. Detailed Findings and Recommendations
 
-## 2. Auth Event Handling
+### 2.1. Centralized Middleware (Compliance: High)
 
-**Finding:** There are three separate `onAuthStateChange` listeners, which is the direct cause of the "multiple GoTrue/Supabase client events being registered" warning.
+**Finding**: `src/middleware.ts` is the single source of truth for request handling and security. It correctly enforces RBAC, CSRF protection, and rate-limiting. The deprecated `src/lib/supabase/middleware.ts` correctly throws errors on use.
 
-*   **`src/lib/hooks/useUser.ts`**: Sets up a listener to update the user state.
-*   **`src/components/providers/supabase-provider.tsx`**: The main provider, which also sets up a listener.
-*   **`src/components/providers/AuthProvider.tsx`**: A redundant provider that duplicates the functionality of `supabase-provider.tsx`.
+**Recommendation**: No action needed. The current middleware is well-implemented.
 
-**Recommendation:**
+### 2.2. API Routes (Compliance: Medium)
 
-1.  **Consolidate Auth Providers**: The `AuthProvider.tsx` is redundant and should be removed. The `supabase-provider.tsx` should be the single source of truth for session and user state management.
-2.  **Centralize `onAuthStateChange`**: The `onAuthStateChange` listener should only be set up once, inside the main `SupabaseProvider`. The `useUser` hook should consume the user state from the provider's context, not set up its own listener.
+**Finding**: While most API routes correctly rely on the middleware for protection, there are significant inconsistencies:
 
-## 3. Session and User Fetching
+1.  **Inconsistent Supabase Clients**: 
+    - Most routes use `createServerClient` from `@supabase/ssr`.
+    - `/api/profile/route.ts` uses the deprecated `createRouteHandlerClient` from `@supabase/auth-helpers-nextjs`.
+2.  **Direct Database Access**: 
+    - `/api/profile/route.ts` performs a direct table read (`from('profiles').select('*')`), violating the documented "RPC-First" principle.
+3.  **Critical Security Vulnerability**:
+    - `/api/profile/route.ts` exports its `GET` handler as `POST`, `PUT`, and `DELETE`. This allows state-changing requests to bypass the middleware's CSRF protection, which only targets non-`GET` methods.
 
-**Finding:** `getSession()` and `getUser()` calls are scattered throughout the codebase, with no centralized utility being used consistently. This leads to duplicated logic, performance issues, and the security warning about using `getSession()` without `getUser()` for validation.
+**Recommendations**:
 
-*   **Direct Calls**: API routes, pages, and the middleware are all making direct calls to `supabase.auth.getSession()` and `supabase.auth.getUser()`.
-*   **Inconsistent Implementations**: `src/lib/supabase/server.ts` provides centralized `getSession` and `getUser` functions, but they are not used everywhere. The middleware, for example, re-implements the same logic.
+1.  **High Priority**: Immediately refactor `/api/profile/route.ts` to separate `GET`, `POST`, `PUT`, and `DELETE` handlers. Ensure all state-changing methods are properly protected.
+2.  **Medium Priority**: Refactor all API routes to use a single, consistent method for creating the Supabase client (preferably `createServerClient` from `@supabase/ssr`).
+3.  **Low Priority**: Refactor the profile route to use an RPC function for fetching profile data instead of direct table access.
 
-**Recommendation:**
+### 2.3. Client-Side State and Providers (Compliance: Low)
 
-1.  **Enforce Centralized Utilities**: All parts of the application should use the `getSession` and `getUser` functions exported from `src/lib/supabase/server.ts` for server-side logic. For client-side logic, a custom hook (like the existing `useUser` or a new `useSession` hook) should be used to get session and user data from the `SupabaseProvider`'s context.
-2.  **Refactor the Middleware**: The middleware should be updated to use the centralized `getSession` and `getUser` functions.
+**Finding**: The client-side providers contain duplicated logic and confusing state management patterns.
 
-## Summary of Recommendations
+1.  **Duplicated Logic in `AuthContext`**: The `onAuthStateChange` handler in `AuthContext.tsx` contains hardcoded logic to determine a user's dashboard path. This logic is already centralized in `src/lib/security/roles.ts` (`getDashboardPath`).
+2.  **Conflicting `active-role` Management**: 
+    - The `RoleSwitcher` component writes the active role to `localStorage`.
+    - The server-side middleware and documentation refer to an `httpOnly` `active-role` cookie.
+    - This conflict forces the `RoleSwitcher` to use `window.location.href` for a full page reload to sync state, resulting in a poor user experience.
 
-1.  **Centralize Supabase Client**: Remove `src/lib/supabaseClient.ts` and refactor all code to use the singleton clients from `src/lib/supabase/client.ts` and `src/lib/supabase/server.ts`.
-2.  **Consolidate Auth State Management**: Remove the redundant `AuthProvider.tsx` and the `onAuthStateChange` listener from `useUser.ts`. The `SupabaseProvider` should be the single source of truth.
-3.  **Centralize Session/User Fetching**: Refactor all direct calls to `getSession` and `getUser` to use centralized utilities and hooks.
+**Recommendations**:
 
-By implementing these changes, you will resolve the warnings, improve the security and performance of your application, and make the codebase easier to maintain.
+1.  **High Priority**: Remove the hardcoded dashboard path logic from `AuthContext.tsx`. It should call an API endpoint or use the centralized `getDashboardPath` function if possible on the client.
+2.  **High Priority**: Establish a single source of truth for the `active-role`. The recommended approach is to **rely solely on the `httpOnly` cookie set by the server**. 
+    - Refactor the `RoleSwitcher` to call the `/api/role/switch` endpoint and then use `router.push()` and `router.refresh()` to navigate and re-render server components, eliminating the need for `localStorage` and `window.location.href`.
+
+### 2.4. Layout and App Router Compliance (Compliance: High)
+
+**Finding**: The project correctly uses the Next.js App Router. The recent introduction of the `PageLayout` component has been successfully applied to the `admin`, `dashboard`, and `profile` layouts, ensuring a consistent look and feel.
+
+**Recommendation**: No action needed. Continue to use the `PageLayout` for all new pages.
+
+### 2.5. Documentation (Compliance: Low)
+
+**Finding**: The documentation is severely fragmented and contains outdated and conflicting information. Files like `MASTER_GUIDE.md`, `AUTHENTICATION_ARCHITECTURE.md`, and `SECURITY.md` all cover similar topics with different details, making it impossible for a developer to know the correct implementation pattern.
+
+**Recommendation**: **High Priority**: Create a single, consolidated `DEVELOPER_GUIDE.md` that serves as the new source of truth. This guide should be based on the findings of this audit and the recommended best practices. All other high-level documentation files should be marked as deprecated or deleted.
+
+## 3. Summary of Recommendations by Priority
+
+### Critical (Address Immediately)
+1.  **Fix CSRF Vulnerability**: Separate the `GET` and `POST`/`PUT`/`DELETE` handlers in `/api/profile/route.ts`.
+
+### High Priority
+1.  **Consolidate `active-role` Management**: Remove `localStorage` usage in `RoleSwitcher` and rely on the server-set `httpOnly` cookie and Next.js router for state updates.
+2.  **Remove Duplicated Logic**: Refactor `AuthContext.tsx` to use centralized helpers for dashboard path resolution.
+3.  **Consolidate Documentation**: Create a single `DEVELOPER_GUIDE.md` and deprecate all other conflicting documents.
+
+### Medium Priority
+1.  **Standardize Supabase Client**: Refactor all API routes to use a single, consistent client creation pattern.
+
+### Low Priority
+1.  **Adhere to RPC-First Principle**: Update the profile API to use an RPC function instead of direct table access.

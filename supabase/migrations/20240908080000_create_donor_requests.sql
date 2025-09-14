@@ -64,20 +64,25 @@ BEGIN
   VALUES (auth.uid())
   RETURNING donor_request_id INTO request_id;
 
-  -- Log the event
-  INSERT INTO public.audit_logs (
-    user_id,
-    action,
-    entity_type,
-    entity_id,
-    metadata
-  ) VALUES (
-    auth.uid(),
-    'donor_request_created',
-    'donor_request',
-    request_id,
-    jsonb_build_object('status', 'pending')
-  );
+  -- Log the event (if audit_logs table exists)
+  BEGIN
+    INSERT INTO public.audit_logs (
+      user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata
+    ) VALUES (
+      auth.uid(),
+      'donor_request_created',
+      'donor_request',
+      request_id,
+      jsonb_build_object('status', 'pending')
+    );
+  EXCEPTION WHEN OTHERS THEN
+    -- Silently fail if audit_logs table doesn't exist or there's an error
+    NULL;
+  END;
 
   RETURN request_id;
 END;
