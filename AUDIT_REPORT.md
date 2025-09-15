@@ -1,86 +1,80 @@
-# Codebase Audit Report - September 14, 2025
+# Codebase Audit Report - September 15, 2025
 
-This report details the findings of a comprehensive audit of the FPN codebase, focusing on centralization, consistency, and security. The audit was conducted to verify compliance with documented standards and identify areas for improvement.
+This report details the findings of a comprehensive audit of the FPN codebase, focusing on compliance with the principles outlined in `DEVELOPER_GUIDE.md`. The audit was conducted to verify the implementation of architectural standards and identify deviations.
 
 ## 1. Executive Summary
 
-The application has a strong foundation with a centralized middleware (`src/middleware.ts`) that correctly handles most security concerns, including session management, CSRF protection, rate-limiting, and RBAC. The recent adoption of a `PageLayout` component has also improved UI consistency.
+**Overall Compliance: Low**
 
-However, the audit identified several critical and high-priority issues that undermine these strengths:
-- **Inconsistent Supabase Client Instantiation**: Multiple, conflicting client libraries and patterns are in use.
-- **Duplicated and Hardcoded Logic**: Key business logic, such as role-to-dashboard routing, is duplicated across the client and server.
-- **Confusing State Management**: The `active-role` is managed by both a client-side `localStorage` item and a server-side `httpOnly` cookie, leading to complex and buggy workarounds like forced page reloads.
-- **Security Vulnerability**: A critical vulnerability exists in the `/api/profile` route that bypasses CSRF protection for state-changing operations.
-- **Outdated Documentation**: The project's documentation is fragmented, outdated, and contains conflicting information.
+The application's architecture is fundamentally undermined by critical security and architectural violations. While some components and API routes adhere to the documented standards, there is a widespread and systemic failure to comply with core principles, leading to significant security risks and maintainability issues.
 
-This report provides detailed findings and actionable recommendations to address these issues.
+The most severe findings include:
+
+1.  **Critical Security Vulnerability (`SECURITY DEFINER`)**: A vast number of database functions are created with `SECURITY DEFINER`, which bypasses all Row-Level Security (RLS) policies. This is a direct and critical violation of the `DEVELOPER_GUIDE.md` and exposes the application to unauthorized data access.
+2.  **Decentralized and Insecure RBAC**: Role-based access control logic is duplicated and inconsistently implemented on the client side, particularly in the `ProfileTabs` and `NonAdminSidebar` components. This bypasses the centralized RBAC system and creates multiple sources of truth for authorization.
+3.  **Inconsistent Data Access**: Multiple API routes and client-side components perform direct table queries, violating the "RPC-First" principle. This decentralizes business logic and bypasses database-level security.
+4.  **Architectural Inconsistencies**: The codebase contains multiple conflicting patterns for Supabase client instantiation, session management (including the use of `localStorage` and `window.location.href`), and CSRF token handling.
+
+This report provides detailed findings and actionable recommendations to address these severe issues.
 
 ## 2. Detailed Findings and Recommendations
 
-### 2.1. Centralized Middleware (Compliance: High)
+### 2.1. Database (Compliance: Critical Risk)
 
-**Finding**: `src/middleware.ts` is the single source of truth for request handling and security. It correctly enforces RBAC, CSRF protection, and rate-limiting. The deprecated `src/lib/supabase/middleware.ts` correctly throws errors on use.
+**Finding**: The audit identified a widespread and critical violation of the database security model. Numerous RPC functions and triggers across dozens of migration files are created with `SECURITY DEFINER` instead of the required `SECURITY INVOKER`. This allows these functions to execute with the privileges of their owner, completely bypassing all Row-Level Security policies.
 
-**Recommendation**: No action needed. The current middleware is well-implemented.
+**Recommendation**:
 
-### 2.2. API Routes (Compliance: Medium)
+1.  **Critical Priority**: Immediately audit every database function and trigger. Replace all instances of `SECURITY DEFINER` with `SECURITY INVOKER` unless there is a documented and approved exception. This is the single most critical action required to secure the application.
 
-**Finding**: While most API routes correctly rely on the middleware for protection, there are significant inconsistencies:
+### 2.2. API Routes (Compliance: Low)
 
-1.  **Inconsistent Supabase Clients**: 
-    - Most routes use `createServerClient` from `@supabase/ssr`.
-    - `/api/profile/route.ts` uses the deprecated `createRouteHandlerClient` from `@supabase/auth-helpers-nextjs`.
-2.  **Direct Database Access**: 
-    - `/api/profile/route.ts` performs a direct table read (`from('profiles').select('*')`), violating the documented "RPC-First" principle.
-3.  **Critical Security Vulnerability**:
-    - `/api/profile/route.ts` exports its `GET` handler as `POST`, `PUT`, and `DELETE`. This allows state-changing requests to bypass the middleware's CSRF protection, which only targets non-`GET` methods.
+**Finding**: While many routes are compliant, several key routes violate core principles:
 
-**Recommendations**:
-
-1.  **High Priority**: Immediately refactor `/api/profile/route.ts` to separate `GET`, `POST`, `PUT`, and `DELETE` handlers. Ensure all state-changing methods are properly protected.
-2.  **Medium Priority**: Refactor all API routes to use a single, consistent method for creating the Supabase client (preferably `createServerClient` from `@supabase/ssr`).
-3.  **Low Priority**: Refactor the profile route to use an RPC function for fetching profile data instead of direct table access.
-
-### 2.3. Client-Side State and Providers (Compliance: Low)
-
-**Finding**: The client-side providers contain duplicated logic and confusing state management patterns.
-
-1.  **Duplicated Logic in `AuthContext`**: The `onAuthStateChange` handler in `AuthContext.tsx` contains hardcoded logic to determine a user's dashboard path. This logic is already centralized in `src/lib/security/roles.ts` (`getDashboardPath`).
-2.  **Conflicting `active-role` Management**: 
-    - The `RoleSwitcher` component writes the active role to `localStorage`.
-    - The server-side middleware and documentation refer to an `httpOnly` `active-role` cookie.
-    - This conflict forces the `RoleSwitcher` to use `window.location.href` for a full page reload to sync state, resulting in a poor user experience.
+1.  **Direct Database Access**: `/api/admin/debug/route.ts` and `/api/auth/sessions/route.ts` perform direct table queries, violating the "RPC-First" principle.
+2.  **Inconsistent Client Instantiation**: `/api/auth/refresh/route.ts` and `/api/auth/signin/route.ts` import the client-side Supabase instance, a major architectural violation.
+3.  **Insecure Data Exposure**: `/api/auth/signin/route.ts` exposes session tokens in the response body, and `/api/csrf/route.ts` exposes the CSRF token. This contradicts the `httpOnly` cookie strategy.
+4.  **Inefficient User Check**: `/api/auth/signup/route.ts` uses an inefficient and insecure `listUsers` call to check for existing users.
 
 **Recommendations**:
 
-1.  **High Priority**: Remove the hardcoded dashboard path logic from `AuthContext.tsx`. It should call an API endpoint or use the centralized `getDashboardPath` function if possible on the client.
-2.  **High Priority**: Establish a single source of truth for the `active-role`. The recommended approach is to **rely solely on the `httpOnly` cookie set by the server**. 
-    - Refactor the `RoleSwitcher` to call the `/api/role/switch` endpoint and then use `router.push()` and `router.refresh()` to navigate and re-render server components, eliminating the need for `localStorage` and `window.location.href`.
+1.  **High Priority**: Refactor all API routes to use RPC functions for all database interactions.
+2.  **High Priority**: Remove all imports of the client-side Supabase client from server-side API routes.
+3.  **Medium Priority**: Refactor the sign-in route to rely exclusively on `httpOnly` cookies for session management, removing tokens from the response body.
 
-### 2.4. Layout and App Router Compliance (Compliance: High)
+### 2.3. Client-Side Components & State (Compliance: Low)
 
-**Finding**: The project correctly uses the Next.js App Router. The recent introduction of the `PageLayout` component has been successfully applied to the `admin`, `dashboard`, and `profile` layouts, ensuring a consistent look and feel.
+**Finding**: Client-side components contain significant architectural violations:
 
-**Recommendation**: No action needed. Continue to use the `PageLayout` for all new pages.
+1.  **Decentralized RBAC**: `ProfileTabs.tsx` and `NonAdminSidebar.tsx` implement their own client-side RBAC logic, bypassing the centralized helpers and creating a separate, insecure source of truth for authorization.
+2.  **Insecure State Management**: `RoleHydrator.tsx` uses `localStorage` and `window.location.reload()`, both of which are explicitly forbidden by the `DEVELOPER_GUIDE.md`.
+3.  **Direct RPC Calls**: `RequestHandler.tsx` makes a direct RPC call from the client, bypassing the API layer and creating an inconsistent data-fetching pattern.
+4.  **Duplicated Logic**: `PasswordStrengthIndicator.tsx` and `PersonalInfoTab.tsx` contain hardcoded logic that should be sourced from centralized constants.
 
-### 2.5. Documentation (Compliance: Low)
+**Recommendations**:
 
-**Finding**: The documentation is severely fragmented and contains outdated and conflicting information. Files like `MASTER_GUIDE.md`, `AUTHENTICATION_ARCHITECTURE.md`, and `SECURITY.md` all cover similar topics with different details, making it impossible for a developer to know the correct implementation pattern.
+1.  **High Priority**: Refactor `ProfileTabs.tsx` and `NonAdminSidebar.tsx` to remove all client-side RBAC logic. The visibility of UI elements should be determined by data fetched from a secure API endpoint that uses the centralized RBAC system.
+2.  **High Priority**: Remove all usage of `localStorage` and `window.location.href` from the application, particularly in `RoleHydrator.tsx` and `supabase-provider.tsx`.
+3.  **Medium Priority**: Refactor `RequestHandler.tsx` to fetch all data through secure API routes instead of making direct RPC calls.
 
-**Recommendation**: **High Priority**: Create a single, consolidated `DEVELOPER_GUIDE.md` that serves as the new source of truth. This guide should be based on the findings of this audit and the recommended best practices. All other high-level documentation files should be marked as deprecated or deleted.
+### 2.4. Documentation (Compliance: High)
+
+**Finding**: The `DEVELOPER_GUIDE.md` is comprehensive and serves as an excellent single source of truth. The primary issue is the codebase's widespread non-compliance with this guide.
+
+**Recommendation**: No action needed on the guide itself. The focus should be on bringing the codebase into compliance with the existing documentation.
 
 ## 3. Summary of Recommendations by Priority
 
 ### Critical (Address Immediately)
-1.  **Fix CSRF Vulnerability**: Separate the `GET` and `POST`/`PUT`/`DELETE` handlers in `/api/profile/route.ts`.
+1.  **Fix `SECURITY DEFINER` Vulnerability**: Audit all database functions and replace `SECURITY DEFINER` with `SECURITY INVOKER`.
 
 ### High Priority
-1.  **Consolidate `active-role` Management**: Remove `localStorage` usage in `RoleSwitcher` and rely on the server-set `httpOnly` cookie and Next.js router for state updates.
-2.  **Remove Duplicated Logic**: Refactor `AuthContext.tsx` to use centralized helpers for dashboard path resolution.
-3.  **Consolidate Documentation**: Create a single `DEVELOPER_GUIDE.md` and deprecate all other conflicting documents.
+1.  **Centralize RBAC**: Remove all client-side RBAC logic from components.
+2.  **Eliminate Insecure Patterns**: Remove all usage of `localStorage`, `window.location.href`, and direct RPC calls from the client.
+3.  **Secure API Data Flow**: Ensure all database interactions from APIs use RPC functions and that no client-side code is imported on the server.
 
 ### Medium Priority
-1.  **Standardize Supabase Client**: Refactor all API routes to use a single, consistent client creation pattern.
+1.  **Standardize Session Management**: Ensure all authentication flows rely exclusively on `httpOnly` cookies and do not expose tokens in API responses.
 
 ### Low Priority
-1.  **Adhere to RPC-First Principle**: Update the profile API to use an RPC function instead of direct table access.
+1.  **Remove Duplicated Logic**: Refactor components to use centralized constants and helpers.

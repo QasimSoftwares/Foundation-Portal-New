@@ -1,30 +1,94 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
-} from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { toast } from 'sonner';
-import { PageLayout } from '@/components/layout/PageLayout';
-import { Input } from '@/components/ui/input';
-import { Search, Loader2, CheckCircle2, XCircle } from 'lucide-react';
-import { logger } from '@/lib/utils/logger';
-import { TransformedRequest } from '@/types/request';
+import { useState, useEffect, useCallback } from "react";
+import { Users, Heart, Clock, TrendingUp, DollarSign, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Search, Plus } from "lucide-react";
+import { useRouter } from "next/navigation";
+import MetricCard from "@/components/admin/MetricCard";
+import { logger } from "@/lib/utils/logger";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 
-export default function DonorRequestsPage() {
+interface TransformedRequest {
+  id: string;
+  status: 'pending' | 'approved' | 'rejected';
+  updated_at: string;
+  created_at: string;
+  full_name: string;
+  email: string;
+}
+
+// Placeholder metrics data - replace with real data from your API
+const initialDonorMetrics = [
+  { 
+    title: "Total Donors", 
+    value: "1,284", 
+    icon: <Users className="h-5 w-5" />, 
+    accent: "blue" as const,
+    subtext: "+12% from last month"
+  },
+  { 
+    title: "Total Donations", 
+    value: "PKR 2.4M", 
+    icon: <DollarSign className="h-5 w-5" />, 
+    accent: "green" as const,
+    subtext: "+8.2% from last month"
+  },
+  { 
+    title: "Pending Requests", 
+    value: "24", 
+    icon: <Clock className="h-5 w-5" />, 
+    accent: "amber" as const,
+    subtext: "Needs review"
+  },
+  { 
+    title: "Active Campaigns", 
+    value: "8", 
+    icon: <TrendingUp className="h-5 w-5" />, 
+    accent: "rose" as const,
+    subtext: "Ongoing initiatives"
+  }
+];
+
+export default function DonorsPage() {
+  const [metrics, setMetrics] = useState(initialDonorMetrics);
+
+  useEffect(() => {
+    const fetchMetrics = async () => {
+      try {
+        const response = await fetch('/api/donors/metrics');
+        if (!response.ok) {
+          throw new Error('Failed to fetch donor metrics');
+        }
+        const data = await response.json();
+        setMetrics(prevMetrics => prevMetrics.map(m => 
+          m.title === 'Total Donors' ? { ...m, value: data.totalDonors.toLocaleString() } : m
+        ));
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+        logger.error('Error fetching donor metrics', { error: error instanceof Error ? error : new Error(String(error)) });
+        toast.error('Could not load total donors count.');
+      }
+    };
+
+    fetchMetrics();
+  }, []);
+
   const [requests, setRequests] = useState<TransformedRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [isUpdating, setIsUpdating] = useState<Record<string, boolean>>({});
-  // Using sonner toast
+  const router = useRouter();
 
   const fetchDonorRequests = useCallback(async () => {
     try {
@@ -182,97 +246,117 @@ export default function DonorRequestsPage() {
   return (
     <div className="space-y-6 pt-2">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-gray-900">Donor Requests</h1>
-        <p className="mt-1 text-sm text-gray-600">Manage and review donor registration requests</p>
+        <h1 className="text-2xl font-bold tracking-tight text-gray-900">Donor Management</h1>
+        <p className="mt-1 text-sm text-gray-600">Manage donors, track donations, and review pending requests</p>
       </div>
-      
-      <div className="space-y-4">
-        <div className="relative w-full md:w-64">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <input
+
+      {/* Metrics Grid */}
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {metrics.map((metric) => (
+          <MetricCard 
+            key={metric.title}
+            title={metric.title}
+            value={metric.value}
+            icon={metric.icon}
+            accent={metric.accent}
+            subtext={metric.subtext}
+          />
+        ))}
+      </section>
+
+      {/* Search and Add Donor */}
+      <div className="flex items-center justify-between pt-2">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <Input
             type="search"
-            placeholder="Search requests..."
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pl-8 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            placeholder="Search donors..."
+            className="pl-9"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Request ID</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Requested</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredRequests.length > 0 ? (
-                filteredRequests.map((request) => (
-                  <TableRow key={request.id}>
-                    <TableCell className="font-medium">{request.id.substring(0, 8)}...</TableCell>
-                    <TableCell>{request.full_name}</TableCell>
-                    <TableCell>{request.email}</TableCell>
-                    <TableCell>
-                      {new Date(request.created_at).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          request.status === 'approved'
-                            ? 'default'
-                            : request.status === 'rejected'
-                            ? 'destructive'
-                            : 'outline'
-                        }
-                      >
-                        {request.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right space-x-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleApprove(request.id)}
-                        disabled={isUpdating[request.id] || request.status !== 'pending'}
-                      >
-                        {isUpdating[request.id] ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <CheckCircle2 className="mr-2 h-4 w-4" />
-                        )}
-                        Approve
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleReject(request.id)}
-                        disabled={isUpdating[request.id] || request.status !== 'pending'}
-                      >
-                        {isUpdating[request.id] ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <XCircle className="mr-2 h-4 w-4" />
-                        )}
-                        Reject
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center">
-                    {requests.length === 0 ? 'No donor requests found.' : 'No matching requests found.'}
+        <Button className="ml-4" onClick={() => router.push('/admin/donors/new')}>
+          <Plus className="mr-2 h-4 w-4" />
+          Add Donor
+        </Button>
+      </div>
+
+      {/* Requests Table */}
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Request ID</TableHead>
+              <TableHead>Name</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Requested</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredRequests.length > 0 ? (
+              filteredRequests.map((request) => (
+                <TableRow key={request.id}>
+                  <TableCell className="font-medium">{request.id.substring(0, 8)}...</TableCell>
+                  <TableCell>{request.full_name}</TableCell>
+                  <TableCell>{request.email}</TableCell>
+                  <TableCell>
+                    {new Date(request.created_at).toLocaleDateString()}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={
+                        request.status === 'approved'
+                          ? 'default'
+                          : request.status === 'rejected'
+                          ? 'destructive'
+                          : 'outline'
+                      }
+                    >
+                      {request.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleApprove(request.id)}
+                      disabled={isUpdating[request.id] || request.status !== 'pending'}
+                    >
+                      {isUpdating[request.id] ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="mr-2 h-4 w-4" />
+                      )}
+                      Approve
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleReject(request.id)}
+                      disabled={isUpdating[request.id] || request.status !== 'pending'}
+                    >
+                      {isUpdating[request.id] ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <XCircle className="mr-2 h-4 w-4" />
+                      )}
+                      Reject
+                    </Button>
                   </TableCell>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={6} className="h-24 text-center">
+                  {requests.length === 0 ? 'No donor requests found.' : 'No matching requests found.'}
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
       </div>
     </div>
   );
