@@ -43,8 +43,8 @@ async function apiClient<T = any>(
     ...rest
   } = options;
 
-  // Add CSRF token for state-changing requests
-  const csrfToken = getCookie('csrf_token');
+  // Add CSRF token for state-changing requests (must match server cookie name in csrf.ts)
+  const csrfToken = getCookie('sb-csrf-token');
   const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
 
   // Prepare headers

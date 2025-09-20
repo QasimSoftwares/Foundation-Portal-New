@@ -28,6 +28,7 @@ type SignInFormData = z.infer<typeof signInSchema>;
 
 function SignInContent() {
   const [isLoading, setIsLoading] = useState(false);
+  const [isRedirecting, setIsRedirecting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const router = useRouter();
@@ -159,8 +160,15 @@ function SignInContent() {
       }
 
       // Manually set the session to trigger the AuthProvider's onAuthStateChange listener
-      // which will handle the redirect automatically
-      await syncSession(); // This will trigger SIGNED_IN event and automatic redirect
+      await syncSession();
+
+      // UX: avoid flashing the sign-in form while the redirect occurs.
+      // Use a hard redirect to ensure cookies/session are respected consistently.
+      setIsRedirecting(true);
+      if (typeof window !== 'undefined') {
+        window.location.href = finalRedirectPath;
+        return; // prevent further UI updates
+      }
     } catch (error: unknown) {
       console.error('Sign in error:', error);
       let errorMessage = 'An unknown error occurred';
@@ -181,17 +189,18 @@ function SignInContent() {
       
       toast.error(`Sign in failed: ${errorMessage}`, { id: toastId });
     } finally {
-      setIsLoading(false);
+      // If redirecting, keep loading UI until navigation completes to avoid flicker
+      if (!isRedirecting) setIsLoading(false);
     }
   };
 
-  if (isLoading) {
+  if (isLoading || isRedirecting) {
     return (
       <div className="w-full max-w-[360px] mx-auto">
         <div className="bg-white p-8 rounded-2xl shadow-lg border border-gray-100">
           <div className="flex flex-col items-center justify-center space-y-4 h-64">
             <Loader2 className="h-12 w-12 text-brand-blue animate-spin" />
-            <p className="text-sm text-gray-600">Signing in...</p>
+            <p className="text-sm text-gray-600">{isRedirecting ? 'Redirecting to your dashboard...' : 'Signing in...'}</p>
           </div>
         </div>
       </div>

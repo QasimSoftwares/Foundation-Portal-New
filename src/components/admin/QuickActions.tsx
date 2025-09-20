@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Plus, UserPlus, Coins, Users } from "lucide-react";
+import { Plus, UserPlus, Coins, Users, Target } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type QuickAction = {
@@ -10,7 +10,7 @@ export type QuickAction = {
   onClick?: () => void;
   href?: string;
   icon?: React.ReactNode;
-  color?: "emerald" | "blue" | "amber" | "rose";
+  color?: "emerald" | "blue" | "amber" | "rose" | "green" | "red";
 };
 
 const colorClasses: Record<NonNullable<QuickAction["color"]>, string> = {
@@ -20,6 +20,8 @@ const colorClasses: Record<NonNullable<QuickAction["color"]>, string> = {
   amber:
     "bg-amber-500 hover:bg-amber-600 focus-visible:outline-amber-500 text-white",
   rose: "bg-rose-600 hover:bg-rose-700 focus-visible:outline-rose-600 text-white",
+  green: "bg-green-600 hover:bg-green-700 focus-visible:outline-green-600 text-white",
+  red: "bg-red-600 hover:bg-red-700 focus-visible:outline-red-600 text-white",
 };
 
 export function QuickActions({
