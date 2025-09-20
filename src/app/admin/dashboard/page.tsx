@@ -11,7 +11,7 @@ import QuickActions from "@/components/admin/QuickActions";
 export default function AdminDashboardPage() {
   const [metrics, setMetrics] = useState([
     { title: "Total Donors", value: "-", icon: <Heart className="h-5 w-5" />, accent: "rose" as const, subtext: "Loading..." },
-    { title: "Total Donations", value: "PKR 1.2M", icon: <Coins className="h-5 w-5" />, accent: "amber" as const, subtext: "Last 30 days" },
+    { title: "Total Donations", value: "-", icon: <Coins className="h-5 w-5" />, accent: "amber" as const, subtext: "Loading..." },
     { title: "Total Volunteers", value: "56", icon: <Users className="h-5 w-5" />, accent: "blue" as const, subtext: "Active volunteers" },
     { title: "Total Members", value: "34", icon: <Shield className="h-5 w-5" />, accent: "green" as const, subtext: "Registered members" },
   ]);
@@ -20,7 +20,7 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     const fetchAllMetrics = async () => {
       try {
-        const [donorsRes, volunteersRes, membersRes] = await Promise.all([
+        const [donorsRes, volunteersRes, membersRes, donationsRes] = await Promise.all([
           fetch('/api/donors/metrics'),
           fetch('/api/admin/volunteers/metrics', {
             headers: {
@@ -34,12 +34,19 @@ export default function AdminDashboardPage() {
               'Pragma': 'no-cache',
             },
           }),
+          fetch('/api/admin/metrics/total-donations', {
+            headers: {
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache',
+            },
+          }),
         ]);
 
         // Parse responses
         const donorsData = donorsRes.ok ? await donorsRes.json() : { totalDonors: 0 };
         const volunteersData = volunteersRes.ok ? await volunteersRes.json() : { totalVolunteers: 0 };
         const membersData = membersRes.ok ? await membersRes.json() : { totalMembers: 0 };
+        const donationsData = donationsRes.ok ? await donationsRes.json() : { total_donations: 0 };
 
         // Update metrics
         setMetrics(prevMetrics =>
@@ -47,6 +54,8 @@ export default function AdminDashboardPage() {
             switch (m.title) {
               case 'Total Donors':
                 return { ...m, value: Number(donorsData.totalDonors ?? 0).toLocaleString(), subtext: 'Registered donors' };
+              case 'Total Donations':
+                return { ...m, value: `PKR ${Number(donationsData.total_donations ?? 0).toLocaleString()}`, subtext: 'All time' };
               case 'Total Volunteers':
                 return { ...m, value: Number(volunteersData.totalVolunteers ?? 0).toLocaleString(), subtext: 'Active volunteers' };
               case 'Total Members':
@@ -63,11 +72,7 @@ export default function AdminDashboardPage() {
 
         // Set fallback values on error
         setMetrics(prevMetrics =>
-          prevMetrics.map(m =>
-            m.title === 'Total Donors' || m.title === 'Total Volunteers' || m.title === 'Total Members'
-              ? { ...m, value: 'Error', subtext: 'Failed to load' }
-              : m
-          )
+          prevMetrics.map(m => ({ ...m, value: 'Error', subtext: 'Failed to load' }))
         );
       }
     };

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Settings, Users, Shield, Banknote, UserCheck, BarChart3, Target } from 'lucide-react';
+import { Home, Settings, Users, Shield, Banknote, UserCheck, BarChart3, Target, DollarSign, FileText } from 'lucide-react';
 
 export default function AdminSidebar() {
   const pathname = usePathname();
@@ -14,7 +14,9 @@ export default function AdminSidebar() {
       <SidebarLink href="/admin/volunteers" icon={<UserCheck className="h-5 w-5" />} active={pathname?.startsWith('/admin/volunteers')}>Volunteers</SidebarLink>
       <SidebarLink href="/admin/members" icon={<Users className="h-5 w-5" />} active={pathname?.startsWith('/admin/members')}>Members</SidebarLink>
       <SidebarLink href="/admin/programs" icon={<Target className="h-5 w-5" />} active={pathname?.startsWith('/admin/programs')}>Programs</SidebarLink>
-      <SidebarLink href="/admin/donations" icon={<Banknote className="h-5 w-5" />} active={pathname?.startsWith('/admin/donations')}>Donations</SidebarLink>
+      <SidebarLink href="/admin/financials" icon={<DollarSign className="h-5 w-5" />} active={pathname?.startsWith('/admin/financials') || pathname?.startsWith('/donations')}>Financials</SidebarLink>
+      <SidebarLink href="/admin/financials/donations" icon={<Banknote className="h-5 w-5" />} active={pathname?.startsWith('/admin/financials/donations')} isSubItem>Donations</SidebarLink>
+      <SidebarLink href="/admin/financials/expenses" icon={<FileText className="h-5 w-5" />} active={pathname?.startsWith('/admin/financials/expenses')} isSubItem>Expenses</SidebarLink>
       <SidebarLink href="/admin/reports" icon={<BarChart3 className="h-5 w-5" />} active={pathname?.startsWith('/admin/reports')}>Reports</SidebarLink>
       <SidebarLink href="/admin/settings" icon={<Settings className="h-5 w-5" />} active={pathname?.startsWith('/admin/settings')}>Settings</SidebarLink>
       <div className="mt-4 border-t pt-4">
@@ -25,13 +27,14 @@ export default function AdminSidebar() {
   );
 }
 
-function SidebarLink({ href, icon, children, active }: { href: string; icon: React.ReactNode; children: React.ReactNode; active?: boolean }) {
+function SidebarLink({ href, icon, children, active, isSubItem }: { href: string; icon: React.ReactNode; children: React.ReactNode; active?: boolean; isSubItem?: boolean }) {
   const base = "flex items-center px-6 py-3 transition-colors rounded-md mx-2";
   const colors = active
     ? "bg-blue-50 text-blue-700"
     : "text-gray-600 hover:bg-gray-100 hover:text-gray-900";
+  const indent = isSubItem ? "ml-4" : "";
   return (
-    <Link href={href} className={`${base} ${colors}`}>
+    <Link href={href} className={`${base} ${colors} ${indent}`}>
       <span className="mr-3">{icon}</span>
       <span>{children}</span>
     </Link>

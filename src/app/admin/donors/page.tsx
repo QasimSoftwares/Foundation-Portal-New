@@ -39,10 +39,10 @@ const initialDonorMetrics = [
   },
   { 
     title: "Total Donations", 
-    value: "PKR 2.4M", 
+    value: "-", 
     icon: <DollarSign className="h-5 w-5" />, 
     accent: "green" as const,
-    isLoading: false
+    isLoading: true
   },
   { 
     title: "Pending Requests", 
@@ -68,17 +68,28 @@ export default function DonorsPage() {
     const fetchMetrics = async () => {
       try {
         setIsLoadingMetrics(true);
-        const response = await fetch('/api/donors/metrics');
-        if (!response.ok) {
+        const [donorsRes, donationsRes] = await Promise.all([
+          fetch('/api/donors/metrics'),
+          fetch('/api/admin/metrics/total-donations', {
+            headers: {
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache',
+            },
+          }),
+        ]);
+        if (!donorsRes.ok) {
           throw new Error('Failed to fetch donor metrics');
         }
-        const data = await response.json();
+        const data = await donorsRes.json();
+        const donationsData = donationsRes.ok ? await donationsRes.json() : { total_donations: 0 };
         setMetrics(prevMetrics => 
           prevMetrics.map(m => ({
             ...m,
             value: m.title === 'Total Donors' 
               ? data.totalDonors.toLocaleString() 
-              : m.value,
+              : (m.title === 'Total Donations' 
+                  ? `PKR ${Number(donationsData.total_donations ?? 0).toLocaleString()}`
+                  : m.value),
             isLoading: false
           }))
         );
