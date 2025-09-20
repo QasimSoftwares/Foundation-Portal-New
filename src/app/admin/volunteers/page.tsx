@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Users, Heart, Clock, TrendingUp, DollarSign, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { Users, Clock, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,65 +28,39 @@ interface TransformedRequest {
   email: string;
 }
 
-// Placeholder metrics for volunteers
+// Initial metrics skeleton (loading state)
 const initialVolunteerMetrics = [
   {
     title: "Total Volunteers",
-    value: "152",
+    value: "-",
     icon: <Users className="h-5 w-5" />,
     accent: "blue" as const,
-    isLoading: false,
+    isLoading: true,
   },
   {
     title: "Pending Volunteer Requests",
-    value: "18",
+    value: "-",
     icon: <Clock className="h-5 w-5" />,
     accent: "amber" as const,
-    isLoading: false,
+    isLoading: true,
   },
   {
     title: "Approved Volunteers",
-    value: "120",
+    value: "-",
     icon: <CheckCircle2 className="h-5 w-5" />,
     accent: "green" as const,
-    isLoading: false,
+    isLoading: true,
   },
   {
     title: "Rejected Volunteers",
-    value: "14",
+    value: "-",
     icon: <XCircle className="h-5 w-5" />,
     accent: "rose" as const,
-    isLoading: false,
+    isLoading: true,
   },
 ];
 
-// Mock data for volunteer requests
-const mockVolunteerRequests: TransformedRequest[] = [
-  {
-    id: 'req_v_001',
-    full_name: 'Ali Khan',
-    email: 'ali.khan@example.com',
-    status: 'pending',
-    created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    updated_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'req_v_002',
-    full_name: 'Fatima Ahmed',
-    email: 'fatima.ahmed@example.com',
-    status: 'approved',
-    created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-    updated_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'req_v_003',
-    full_name: 'Zainab Bibi',
-    email: 'zainab.bibi@example.com',
-    status: 'rejected',
-    created_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-    updated_at: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-];
+// NOTE: Data now fetched from /api/admin/volunteers endpoints
 
 export default function VolunteersPage() {
   const [metrics, setMetrics] = useState(initialVolunteerMetrics);
@@ -96,16 +70,75 @@ export default function VolunteersPage() {
   const [isUpdating, setIsUpdating] = useState<Record<string, boolean>>({});
   const router = useRouter();
 
-  // TODO: Replace with real data fetching from the backend
+  // Fetch metrics and pending requests from server APIs
   const fetchVolunteerData = useCallback(async () => {
-    setIsLoading(true);
-    logger.info('Fetching mock volunteer data...');
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setRequests(mockVolunteerRequests);
-    // TODO: Fetch real metrics from the backend
-    // For now, we use the static initialVolunteerMetrics
-    setIsLoading(false);
+    try {
+      setIsLoading(true);
+      logger.info('Fetching volunteer metrics and requests...');
+
+      const [metricsRes, listRes] = await Promise.all([
+        fetch('/api/admin/volunteers/metrics', {
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+          },
+        }),
+        fetch('/api/admin/volunteers/list?status=pending&page=1&pageSize=50', {
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+          },
+        }),
+      ]);
+
+      if (!metricsRes.ok) {
+        const err = await metricsRes.json().catch(() => ({}));
+        throw new Error(err?.error || 'Failed to fetch volunteer metrics');
+      }
+      if (!listRes.ok) {
+        const err = await listRes.json().catch(() => ({}));
+        throw new Error(err?.error || 'Failed to fetch volunteer list');
+      }
+
+      const metricsData = await metricsRes.json();
+      const listData = await listRes.json();
+
+      // Update metrics values
+      setMetrics(prev => prev.map(m => {
+        switch (m.title) {
+          case 'Total Volunteers':
+            return { ...m, value: Number(metricsData.totalVolunteers ?? 0).toString(), isLoading: false };
+          case 'Pending Volunteer Requests':
+            return { ...m, value: Number(metricsData.pendingVolunteerRequests ?? 0).toString(), isLoading: false };
+          case 'Approved Volunteers':
+            return { ...m, value: Number(metricsData.approvedVolunteers ?? 0).toString(), isLoading: false };
+          case 'Rejected Volunteers':
+            return { ...m, value: Number(metricsData.rejectedVolunteers ?? 0).toString(), isLoading: false };
+          default:
+            return { ...m, isLoading: false };
+        }
+      }));
+
+      // Normalize list items to TransformedRequest[]
+      const items: any[] = Array.isArray(listData?.items) ? listData.items : [];
+      const transformed: TransformedRequest[] = items.map((it) => ({
+        id: String(it.id),
+        full_name: it.full_name || 'Unknown',
+        email: it.email || 'No email',
+        status: (it.status || 'pending') as 'pending' | 'approved' | 'rejected',
+        created_at: it.created_at || new Date().toISOString(),
+        updated_at: it.updated_at || it.created_at || new Date().toISOString(),
+      }));
+      setRequests(transformed);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      toast.error(`Failed to load volunteers: ${message}`);
+      logger.error('Error fetching volunteer data', { error: error instanceof Error ? error : new Error(String(error)) });
+      // Mark metrics as not loading to avoid skeletons forever
+      setMetrics(prev => prev.map(m => ({ ...m, value: 'Error', isLoading: false })));
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -113,13 +146,71 @@ export default function VolunteersPage() {
   }, [fetchVolunteerData]);
 
   const handleApprove = async (requestId: string) => {
-    // TODO: Implement volunteer approval logic
-    toast.info('Approve functionality to be implemented.');
+    try {
+      setIsUpdating(prev => ({ ...prev, [requestId]: true }));
+      logger.info('Approving volunteer request', { requestId });
+      
+      const response = await fetch('/api/admin/requests/update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          requestId,
+          action: 'approve',
+          role: 'volunteer',
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error?.error || 'Failed to approve volunteer request');
+      }
+
+      toast.success('Volunteer request approved successfully');
+      // Refresh the data
+      await fetchVolunteerData();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      logger.error('Error approving volunteer request', { error: error instanceof Error ? error : new Error(String(error)) });
+      toast.error(`Failed to approve request: ${message}`);
+    } finally {
+      setIsUpdating(prev => ({ ...prev, [requestId]: false }));
+    }
   };
 
   const handleReject = async (requestId: string) => {
-    // TODO: Implement volunteer rejection logic
-    toast.info('Reject functionality to be implemented.');
+    try {
+      setIsUpdating(prev => ({ ...prev, [requestId]: true }));
+      logger.info('Rejecting volunteer request', { requestId });
+      
+      const response = await fetch('/api/admin/requests/update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          requestId,
+          action: 'reject',
+          role: 'volunteer',
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error?.error || 'Failed to reject volunteer request');
+      }
+
+      toast.success('Volunteer request rejected');
+      // Refresh the data
+      await fetchVolunteerData();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      logger.error('Error rejecting volunteer request', { error: error instanceof Error ? error : new Error(String(error)) });
+      toast.error(`Failed to reject request: ${message}`);
+    } finally {
+      setIsUpdating(prev => ({ ...prev, [requestId]: false }));
+    }
   };
 
   const filteredRequests = requests.filter(request =>

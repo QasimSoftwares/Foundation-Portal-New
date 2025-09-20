@@ -16,40 +16,63 @@ export default function AdminDashboardPage() {
     { title: "Total Members", value: "34", icon: <Shield className="h-5 w-5" />, accent: "green" as const, subtext: "Registered members" },
   ]);
 
-  // Fetch total donors count
+  // Fetch all metrics from different endpoints
   useEffect(() => {
-    const fetchDonorCount = async () => {
+    const fetchAllMetrics = async () => {
       try {
-        const response = await fetch('/api/donors/metrics');
-        if (!response.ok) {
-          throw new Error('Failed to fetch donor metrics');
-        }
-        const data = await response.json();
-        
-        setMetrics(prevMetrics => 
-          prevMetrics.map(m => 
-            m.title === 'Total Donors' 
-              ? { ...m, value: data.totalDonors.toLocaleString(), subtext: 'Registered donors' } 
-              : m
-          )
+        const [donorsRes, volunteersRes, membersRes] = await Promise.all([
+          fetch('/api/donors/metrics'),
+          fetch('/api/admin/volunteers/metrics', {
+            headers: {
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache',
+            },
+          }),
+          fetch('/api/admin/members/metrics', {
+            headers: {
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache',
+            },
+          }),
+        ]);
+
+        // Parse responses
+        const donorsData = donorsRes.ok ? await donorsRes.json() : { totalDonors: 0 };
+        const volunteersData = volunteersRes.ok ? await volunteersRes.json() : { totalVolunteers: 0 };
+        const membersData = membersRes.ok ? await membersRes.json() : { totalMembers: 0 };
+
+        // Update metrics
+        setMetrics(prevMetrics =>
+          prevMetrics.map(m => {
+            switch (m.title) {
+              case 'Total Donors':
+                return { ...m, value: Number(donorsData.totalDonors ?? 0).toLocaleString(), subtext: 'Registered donors' };
+              case 'Total Volunteers':
+                return { ...m, value: Number(volunteersData.totalVolunteers ?? 0).toLocaleString(), subtext: 'Active volunteers' };
+              case 'Total Members':
+                return { ...m, value: Number(membersData.totalMembers ?? 0).toLocaleString(), subtext: 'Registered members' };
+              default:
+                return m;
+            }
+          })
         );
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-        logger.error('Error fetching donor metrics', { error: error instanceof Error ? error : new Error(String(error)) });
-        toast.error('Could not load total donors count.');
-        
-        // Set a fallback value
-        setMetrics(prevMetrics => 
-          prevMetrics.map(m => 
-            m.title === 'Total Donors' 
-              ? { ...m, value: 'Error', subtext: 'Failed to load' } 
+        logger.error('Error fetching dashboard metrics', { error: error instanceof Error ? error : new Error(String(error)) });
+        toast.error('Could not load dashboard metrics.');
+
+        // Set fallback values on error
+        setMetrics(prevMetrics =>
+          prevMetrics.map(m =>
+            m.title === 'Total Donors' || m.title === 'Total Volunteers' || m.title === 'Total Members'
+              ? { ...m, value: 'Error', subtext: 'Failed to load' }
               : m
           )
         );
       }
     };
 
-    fetchDonorCount();
+    fetchAllMetrics();
   }, []);
 
   return (
