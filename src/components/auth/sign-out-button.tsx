@@ -17,8 +17,16 @@ export function SignOutButton({
   const { signOut } = useAuth();
 
   const handleSignOut = async () => {
-    await signOut();
-    // The signOut function from useAuth will handle session clearing and redirection.
+    try {
+      // Clear role-related storage before signing out
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('active-role');
+        sessionStorage.removeItem('pendingRole');
+      }
+      await signOut();
+    } catch (error) {
+      console.error('Error during sign out:', error);
+    }
   };
 
   return (

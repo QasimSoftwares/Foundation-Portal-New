@@ -1,18 +1,56 @@
 "use client";
 
 import { Users, Coins, Heart, Shield } from "lucide-react";
+import { useState, useEffect } from "react";
+import { toast } from "sonner";
+import { logger } from "@/lib/utils/logger";
 import MetricCard from "@/components/admin/MetricCard";
 import RecentActivity from "@/components/admin/RecentActivity";
 import QuickActions from "@/components/admin/QuickActions";
 
 export default function AdminDashboardPage() {
-  // Placeholder metric values; wire up to RPC/data later
-  const metrics = [
-    { title: "Total Donors", value: 128, icon: <Heart className="h-5 w-5" />, accent: "rose" as const },
-    { title: "Total Donations", value: "PKR 1.2M", icon: <Coins className="h-5 w-5" />, accent: "amber" as const },
-    { title: "Total Volunteers", value: 56, icon: <Users className="h-5 w-5" />, accent: "blue" as const },
-    { title: "Total Members", value: 34, icon: <Shield className="h-5 w-5" />, accent: "green" as const },
-  ];
+  const [metrics, setMetrics] = useState([
+    { title: "Total Donors", value: "-", icon: <Heart className="h-5 w-5" />, accent: "rose" as const, subtext: "Loading..." },
+    { title: "Total Donations", value: "PKR 1.2M", icon: <Coins className="h-5 w-5" />, accent: "amber" as const, subtext: "Last 30 days" },
+    { title: "Total Volunteers", value: "56", icon: <Users className="h-5 w-5" />, accent: "blue" as const, subtext: "Active volunteers" },
+    { title: "Total Members", value: "34", icon: <Shield className="h-5 w-5" />, accent: "green" as const, subtext: "Registered members" },
+  ]);
+
+  // Fetch total donors count
+  useEffect(() => {
+    const fetchDonorCount = async () => {
+      try {
+        const response = await fetch('/api/donors/metrics');
+        if (!response.ok) {
+          throw new Error('Failed to fetch donor metrics');
+        }
+        const data = await response.json();
+        
+        setMetrics(prevMetrics => 
+          prevMetrics.map(m => 
+            m.title === 'Total Donors' 
+              ? { ...m, value: data.totalDonors.toLocaleString(), subtext: 'Registered donors' } 
+              : m
+          )
+        );
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+        logger.error('Error fetching donor metrics', { error: error instanceof Error ? error : new Error(String(error)) });
+        toast.error('Could not load total donors count.');
+        
+        // Set a fallback value
+        setMetrics(prevMetrics => 
+          prevMetrics.map(m => 
+            m.title === 'Total Donors' 
+              ? { ...m, value: 'Error', subtext: 'Failed to load' } 
+              : m
+          )
+        );
+      }
+    };
+
+    fetchDonorCount();
+  }, []);
 
   return (
     <div className="space-y-6 pt-2">
@@ -24,7 +62,13 @@ export default function AdminDashboardPage() {
       {/* Metrics Grid */}
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {metrics.map((m) => (
-          <MetricCard key={m.title} title={m.title} value={m.value} icon={m.icon} accent={m.accent} />
+          <MetricCard 
+            key={m.title} 
+            title={m.title} 
+            value={m.value} 
+            icon={m.icon} 
+            accent={m.accent}
+          />
         ))}
       </section>
 

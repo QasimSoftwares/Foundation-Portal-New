@@ -62,7 +62,14 @@ type RoleProviderProps = {
 export function RoleProvider({ children, initialRoles, initialActiveRole, session }: RoleProviderProps) {
   const router = useRouter();
   const [roles, setRoles] = useState<UserRole[]>(initialRoles ?? []);
-  const [activeRole, setActiveRoleState] = useState<UserRole | null>(initialActiveRole ?? null);
+  const [activeRole, setActiveRoleState] = useState<UserRole | null>(() => {
+    // Try to get active role from localStorage first, then from props
+    if (typeof window !== 'undefined') {
+      const savedRole = localStorage.getItem('active-role');
+      return savedRole && isValidRole(savedRole) ? savedRole as UserRole : (initialActiveRole ?? null);
+    }
+    return initialActiveRole ?? null;
+  });
   const [loading, setLoading] = useState<boolean>(!initialRoles);
   const [error, setError] = useState<string | null>(null);
 
@@ -203,6 +210,20 @@ export function RoleProvider({ children, initialRoles, initialActiveRole, sessio
     return effectiveRole ? getDashboardPath(effectiveRole) : '/dashboard';
   }, [effectiveRole]);
   
+  // Save active role to localStorage whenever it changes
+  useEffect(() => {
+    if (activeRole && typeof window !== 'undefined') {
+      localStorage.setItem('active-role', activeRole);
+    }
+  }, [activeRole]);
+
+  // Clear active role from localStorage when signing out
+  useEffect(() => {
+    if (!session && typeof window !== 'undefined') {
+      localStorage.removeItem('active-role');
+    }
+  }, [session]);
+
   // Reload roles when the session changes (e.g., sign-in/out)
   useEffect(() => {
     if (session) {

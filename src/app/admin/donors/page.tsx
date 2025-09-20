@@ -28,56 +28,76 @@ interface TransformedRequest {
   email: string;
 }
 
-// Placeholder metrics data - replace with real data from your API
+// Initial metrics data with loading state
 const initialDonorMetrics = [
   { 
     title: "Total Donors", 
-    value: "1,284", 
+    value: "-", 
     icon: <Users className="h-5 w-5" />, 
     accent: "blue" as const,
-    subtext: "+12% from last month"
+    isLoading: true
   },
   { 
     title: "Total Donations", 
     value: "PKR 2.4M", 
     icon: <DollarSign className="h-5 w-5" />, 
     accent: "green" as const,
-    subtext: "+8.2% from last month"
+    isLoading: false
   },
   { 
     title: "Pending Requests", 
-    value: "24", 
+    value: "-", 
     icon: <Clock className="h-5 w-5" />, 
     accent: "amber" as const,
-    subtext: "Needs review"
+    isLoading: true
   },
   { 
     title: "Active Campaigns", 
-    value: "8", 
+    value: "-", 
     icon: <TrendingUp className="h-5 w-5" />, 
     accent: "rose" as const,
-    subtext: "Ongoing initiatives"
+    isLoading: true
   }
 ];
 
 export default function DonorsPage() {
   const [metrics, setMetrics] = useState(initialDonorMetrics);
+  const [isLoadingMetrics, setIsLoadingMetrics] = useState(true);
 
   useEffect(() => {
     const fetchMetrics = async () => {
       try {
+        setIsLoadingMetrics(true);
         const response = await fetch('/api/donors/metrics');
         if (!response.ok) {
           throw new Error('Failed to fetch donor metrics');
         }
         const data = await response.json();
-        setMetrics(prevMetrics => prevMetrics.map(m => 
-          m.title === 'Total Donors' ? { ...m, value: data.totalDonors.toLocaleString() } : m
-        ));
+        setMetrics(prevMetrics => 
+          prevMetrics.map(m => ({
+            ...m,
+            value: m.title === 'Total Donors' 
+              ? data.totalDonors.toLocaleString() 
+              : m.value,
+            isLoading: false
+          }))
+        );
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
         logger.error('Error fetching donor metrics', { error: error instanceof Error ? error : new Error(String(error)) });
         toast.error('Could not load total donors count.');
+        
+        // Set error state for metrics
+        setMetrics(prevMetrics => 
+          prevMetrics.map(m => ({
+            ...m,
+            value: 'Error',
+            subtext: 'Failed to load',
+            isLoading: false
+          }))
+        );
+      } finally {
+        setIsLoadingMetrics(false);
       }
     };
 
@@ -253,13 +273,13 @@ export default function DonorsPage() {
       {/* Metrics Grid */}
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {metrics.map((metric) => (
-          <MetricCard 
+          <MetricCard
             key={metric.title}
             title={metric.title}
             value={metric.value}
             icon={metric.icon}
             accent={metric.accent}
-            subtext={metric.subtext}
+            isLoading={metric.isLoading}
           />
         ))}
       </section>

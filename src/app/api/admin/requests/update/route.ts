@@ -44,16 +44,41 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing required parameters.' }, { status: 400 });
     }
 
-    // The RPC function `handle_role_request` already checks for admin role.
+    logger.info('Calling handle_role_request RPC', { 
+      requestId, 
+      action, 
+      role,
+      userId: session.user.id
+    });
+
     const { data, error } = await supabase.rpc('handle_role_request', {
       p_request_id: requestId,
       p_action: action,
       p_role: role,
     });
 
+    logger.info('RPC response received', { data, error });
+
     if (error) {
-      logger.error('Error handling role request:', { error });
-      throw error;
+      const errorDetails = {
+        ...error,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        message: error.message,
+        errorString: JSON.stringify(error, Object.getOwnPropertyNames(error)),
+        rawData: data
+      };
+      
+      logger.error('Error from handle_role_request RPC:', errorDetails);
+      
+      return NextResponse.json(
+        { 
+          error: 'Failed to process role request',
+          details: errorDetails
+        }, 
+        { status: 400 }
+      );
     }
 
     if (data.status === 'error') {
