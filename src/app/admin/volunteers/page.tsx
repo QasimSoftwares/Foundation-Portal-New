@@ -219,14 +219,6 @@ export default function VolunteersPage() {
     request.id?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6 pt-2">
       <div>
@@ -280,7 +272,16 @@ export default function VolunteersPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredRequests.length > 0 ? (
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={6} className="h-24 text-center">
+                  <div className="flex items-center justify-center">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary mr-2" />
+                    Loading volunteer requests...
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : filteredRequests.length > 0 ? (
               filteredRequests.map((request) => (
                 <TableRow key={request.id}>
                   <TableCell className="font-medium">{request.id.substring(0, 8)}...</TableCell>

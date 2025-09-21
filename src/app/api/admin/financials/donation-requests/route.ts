@@ -42,15 +42,32 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Delegate to RPC that returns human-readable fields
-    const { data, error } = await supabase.rpc("list_pending_donation_requests");
+    // Get both pending requests and total count in parallel
+    const [
+      { data: requests, error: requestsError },
+      { count: totalCount, error: countError }
+    ] = await Promise.all([
+      supabase.rpc("list_pending_donation_requests"),
+      supabase
+        .from("donation_requests")
+        .select('*', { count: 'exact', head: true })
+    ]);
 
-    if (error) {
-      logger.error("[Financials] List donation requests DB error", { error });
+    if (requestsError) {
+      logger.error("[Financials] List donation requests DB error", { error: requestsError });
       return NextResponse.json({ error: "Failed to fetch donation requests" }, { status: 500 });
     }
 
-    return NextResponse.json({ status: "success", requests: data || [] });
+    if (countError) {
+      logger.error("[Financials] Count donation requests DB error", { error: countError });
+      // Don't fail the whole request if count fails, just log it
+    }
+
+    return NextResponse.json({ 
+      status: "success", 
+      requests: requests || [],
+      total_requests: totalCount || 0
+    });
   } catch (err) {
     logger.error("[Financials] List donation requests unexpected error", { err: err instanceof Error ? err.message : String(err) });
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

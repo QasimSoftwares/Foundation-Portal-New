@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen, Heart, Wheat, Users, Target, CheckCircle2, XCircle, Plus } from "lucide-react";
+import { BookOpen, Heart, Wheat, Users, Target, CheckCircle2, XCircle, Plus, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useRouter } from "next/navigation";
@@ -264,24 +264,16 @@ export default function ProgramsPage() {
 
       {/* Metrics Grid */}
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {loading ? (
-          Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="rounded-lg border border-gray-200 p-4 animate-pulse">
-              <div className="h-4 w-24 bg-gray-200 rounded mb-2" />
-              <div className="h-6 w-32 bg-gray-200 rounded" />
-            </div>
-          ))
-        ) : (
-          metrics.map((metric) => (
-            <MetricCard
-              key={metric.title}
-              title={metric.title}
-              value={metric.value}
-              icon={metric.icon}
-              accent={metric.accent}
-            />
-          ))
-        )}
+        {metrics.map((metric, index) => (
+          <MetricCard
+            key={metric.title}
+            title={metric.title}
+            value={metric.value}
+            icon={metric.icon}
+            accent={metric.accent}
+            isLoading={loading}
+          />
+        ))}
       </section>
 
       {/* Tabs for Categories / Projects */}
@@ -311,22 +303,22 @@ export default function ProgramsPage() {
           {/* Header actions */}
           {isAdmin && (
             <div className="flex items-center justify-end">
-              <Button onClick={() => setShowCategoryModal(true)}>
+              <Button 
+                onClick={() => setShowCategoryModal(true)}
+                disabled={loading}
+              >
                 <Plus className="mr-2 h-4 w-4" /> Add New Category
               </Button>
             </div>
           )}
 
           <div className="space-y-6">
-            {loading && (
-              Array.from({ length: 2 }).map((_, idx) => (
-                <div key={idx} className="rounded-lg border border-gray-200 p-6 animate-pulse">
-                  <div className="h-5 w-40 bg-gray-200 rounded mb-2" />
-                  <div className="h-4 w-64 bg-gray-200 rounded" />
-                </div>
-              ))
-            )}
-            {!loading && displayCategories.length === 0 && (
+            {loading ? (
+              <div className="flex flex-col items-center justify-center py-12 border rounded-lg">
+                <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
+                <p className="text-sm text-muted-foreground">Loading categories...</p>
+              </div>
+            ) : displayCategories.length === 0 ? (
               <div className="text-center text-sm text-gray-600">
                 No categories found.
                 {isAdmin && (
@@ -337,66 +329,81 @@ export default function ProgramsPage() {
                   </div>
                 )}
               </div>
-            )}
-            {!loading && displayCategories.map((category: CategoryUI) => (
-              <div key={category.id} className="rounded-lg border border-gray-200 p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center space-x-3">
-                    <div className={`p-2 rounded-lg ${
-                      category.accent === 'blue' ? 'bg-blue-50 text-blue-600' :
-                      category.accent === 'rose' ? 'bg-rose-50 text-rose-600' :
-                      'bg-amber-50 text-amber-600'
-                    }`}>
-                      {category.icon}
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">{category.name}</h3>
-                      <p className="text-sm text-gray-600">{category.description}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Badge variant={category.isActive ? 'default' : 'secondary'}>
-                      {category.isActive ? 'Active' : 'Inactive'}
-                    </Badge>
-                    {isAdmin && (
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => { setEditCategoryId(category.id); setEditName(category.name); setEditDesc(category.description || ''); setShowEditModal(true); }}
-                        >
-                          Edit
-                        </Button>
-                        {category.isActive && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={async () => {
-                              try {
-                                await apiClient('/api/admin/programs/category/deactivate', { method: 'POST', body: JSON.stringify({ category_id: category.id }) });
-                                toast.success('Category deactivated');
-                                await loadData();
-                              } catch {
-                                toast.error('Failed to deactivate category');
-                              }
-                            }}
-                          >
-                            Deactivate
-                          </Button>
+            ) : (
+              <div className="space-y-4">
+                {displayCategories.map((category: CategoryUI) => (
+                  <div key={category.id} className="rounded-lg border border-gray-200 p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center space-x-3">
+                        <div className={`p-2 rounded-lg ${
+                          category.accent === 'blue' ? 'bg-blue-50 text-blue-600' :
+                          category.accent === 'rose' ? 'bg-rose-50 text-rose-600' :
+                          'bg-amber-50 text-amber-600'
+                        }`}>
+                          {category.icon}
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-900">{category.name}</h3>
+                          <p className="text-sm text-gray-600">{category.description}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Badge variant={category.isActive ? 'default' : 'secondary'}>
+                          {category.isActive ? 'Active' : 'Inactive'}
+                        </Badge>
+                        {isAdmin && (
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => { 
+                                setEditCategoryId(category.id); 
+                                setEditName(category.name); 
+                                setEditDesc(category.description || ''); 
+                                setShowEditModal(true); 
+                              }}
+                            >
+                              Edit
+                            </Button>
+                            {category.isActive && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={async () => {
+                                  try {
+                                    await apiClient('/api/admin/programs/category/deactivate', { 
+                                      method: 'POST', 
+                                      body: JSON.stringify({ category_id: category.id }) 
+                                    });
+                                    toast.success('Category deactivated');
+                                    await loadData();
+                                  } catch {
+                                    toast.error('Failed to deactivate category');
+                                  }
+                                }}
+                              >
+                                Deactivate
+                              </Button>
+                            )}
+                          </div>
                         )}
                       </div>
-                    )}
+                    </div>
                   </div>
-                </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
         </TabsContent>
 
         <TabsContent value="projects" isActive={activeTab === 'projects'} className="space-y-4">
           {isAdmin && (
             <div className="flex items-center justify-end">
-              <Button variant="outline" onClick={() => setShowProjectModal(true)}>
+              <Button 
+                variant="outline" 
+                onClick={() => setShowProjectModal(true)}
+                disabled={loading || !activeCategories || activeCategories.length === 0}
+              >
                 <Plus className="mr-2 h-4 w-4" /> Add New Project
               </Button>
             </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DollarSign, TrendingUp, Heart, FileText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { fetchWithCSRF } from "@/lib/http/csrf-interceptor";
@@ -34,27 +34,35 @@ export default function DonationsPage() {
   const [requests, setRequests] = useState<DonationRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalDonations, setTotalDonations] = useState<number | null>(null);
+  const [totalRequests, setTotalRequests] = useState<number | null>(null);
+
+  const loadRequests = useCallback(async () => {
+    try {
+      const res = await fetchWithCSRF("/api/admin/financials/donation-requests", {
+        credentials: "include",
+        headers: { 'Cache-Control': 'no-cache' }
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to load donation requests");
+      }
+
+      setRequests(data.requests || []);
+      setTotalRequests(data.total_requests || 0);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unexpected error";
+      toast.error(msg);
+      setTotalRequests(0);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const loadRequests = async () => {
-      try {
-        const res = await fetchWithCSRF("/api/admin/financials/donation-requests", {
-          credentials: "include",
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data?.error || "Failed to load donation requests");
-        }
-        setRequests(data.requests || []);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Unexpected error";
-        toast.error(msg);
-      } finally {
-        setLoading(false);
-      }
-    };
     loadRequests();
-  }, []);
+  }, [loadRequests]);
 
   useEffect(() => {
     const loadTotalDonations = async () => {
@@ -93,7 +101,7 @@ export default function DonationsPage() {
       }
       toast.success("Donation request approved", { id: t });
       // Update the request status in the list
-      setRequests(requests.map(r => r.donation_request_id === requestId ? { ...r, status: "Approved" } : r));
+      await loadRequests(); // Refresh the data to get updated counts
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unexpected error";
       toast.error(msg, { id: t });
@@ -117,7 +125,7 @@ export default function DonationsPage() {
       }
       toast.success("Donation request rejected", { id: t });
       // Update the request status in the list
-      setRequests(requests.map(r => r.donation_request_id === requestId ? { ...r, status: "Rejected" } : r));
+      await loadRequests(); // Refresh the data to get updated counts
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unexpected error";
       toast.error(msg, { id: t });
@@ -133,7 +141,10 @@ export default function DonationsPage() {
           <h1 className="text-2xl font-bold tracking-tight text-gray-900">Donations Management</h1>
           <p className="mt-1 text-sm text-gray-600">Track and manage donation requests</p>
         </div>
-        <a href="/admin/financials/donations/new" className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md bg-brand-blue text-white hover:bg-blue-700">
+        <a 
+          href="/admin/financials/donations/new" 
+          className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md bg-brand-blue text-white hover:bg-blue-700"
+        >
           Add Donation Request
         </a>
       </div>
@@ -149,13 +160,15 @@ export default function DonationsPage() {
         />
         <MetricCard
           title="Total Requests"
-          value={requests.length.toString()}
+          value={totalRequests === null ? '0' : totalRequests.toLocaleString()}
+          isLoading={loading}
           icon={<DollarSign className="h-5 w-5" />}
           accent="green"
         />
         <MetricCard
           title="Pending Requests"
           value={pendingRequests.length.toString()}
+          isLoading={loading}
           icon={<FileText className="h-5 w-5" />}
           accent="amber"
         />
@@ -179,7 +192,10 @@ export default function DonationsPage() {
             {loading ? (
               <TableRow>
                 <TableCell colSpan={7} className="h-24 text-center">
-                  Loading...
+                  <div className="flex items-center justify-center">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary mr-2" />
+                    Loading donation requests...
+                  </div>
                 </TableCell>
               </TableRow>
             ) : pendingRequests.length === 0 ? (

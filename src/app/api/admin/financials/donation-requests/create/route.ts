@@ -52,6 +52,7 @@ export async function POST(request: NextRequest) {
     const mode_of_payment = String(body?.mode_of_payment || "");
     const donation_type = String(body?.donation_type || "");
     const donation_date = String(body?.donation_date || "");
+    const transaction_id = String(body?.transaction_id || "").trim() || null;
 
     if (!donor_number || !category_name || !project_name || !mode_of_payment || !donation_type || !donation_date || !Number.isFinite(amount)) {
       return NextResponse.json({ error: "Missing or invalid fields" }, { status: 400 });
@@ -66,6 +67,7 @@ export async function POST(request: NextRequest) {
       p_mode_of_payment: mode_of_payment,
       p_donation_type: donation_type,
       p_donation_date: donation_date,
+      p_transaction_id: transaction_id,
     });
 
     if (error) {

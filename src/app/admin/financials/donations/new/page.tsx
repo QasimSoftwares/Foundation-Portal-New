@@ -23,6 +23,7 @@ const donationSchema = z.object({
   mode_of_payment: z.enum(["Online", "BankTransfer", "CreditCard"], { required_error: "Mode of payment is required" }),
   donation_type: z.enum(["Zakat", "Sadqa", "General"], { required_error: "Donation type is required" }),
   donation_date: z.string().min(1, "Donation date is required"),
+  transaction_id: z.string().optional(),
 });
 
 type DonationFormData = z.infer<typeof donationSchema>;
@@ -273,6 +274,17 @@ export default function NewDonationPage() {
             <Label htmlFor="donation_date">Donation Date</Label>
             <Input id="donation_date" type="date" {...register("donation_date")} />
             {errors.donation_date && <p className="mt-1 text-sm text-red-600">{errors.donation_date.message}</p>}
+          </div>
+
+          <div>
+            <Label htmlFor="transaction_id">Transaction ID (Optional)</Label>
+            <Input 
+              id="transaction_id" 
+              placeholder="e.g., bank reference number" 
+              {...register("transaction_id")} 
+            />
+            <p className="mt-1 text-xs text-gray-500">Enter the bank or payment reference number if available</p>
+            {errors.transaction_id && <p className="mt-1 text-sm text-red-600">{errors.transaction_id.message}</p>}
           </div>
 
           <div>

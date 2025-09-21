@@ -49,16 +49,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "donation_request_id is required" }, { status: 400 });
     }
 
-    const { data, error } = await supabase.rpc("approve_donation_request", {
-      p_donation_request_id: donation_request_id,
+    // Delegate to atomic approval route to generate/upload receipt and update receipt_pdf_path
+    const approveUrl = new URL("/api/admin/donations/approve", request.url);
+    const forwardHeaders = new Headers({ "Content-Type": "application/json" });
+    const csrf = request.headers.get("x-csrf-token");
+    if (csrf) forwardHeaders.set("x-csrf-token", csrf);
+    const cookie = request.headers.get("cookie");
+    if (cookie) forwardHeaders.set("cookie", cookie);
+
+    const res = await fetch(approveUrl, {
+      method: "POST",
+      headers: forwardHeaders,
+      body: JSON.stringify({ donation_request_id }),
     });
 
-    if (error) {
-      logger.error("[Financials] approve_donation_request RPC error", { error });
-      return NextResponse.json({ error: error.message || "Failed to approve donation request" }, { status: 400 });
+    const json = await res.json().catch(() => ({ status: "error", message: "Invalid response" }));
+    if (!res.ok || json?.status !== "success") {
+      logger.error("[Financials] Atomic approval failed", { donation_request_id, status: res.status, json });
+      return NextResponse.json(json ?? { error: "Approval failed" }, { status: res.status || 500 });
     }
 
-    return NextResponse.json({ status: "approved", donation: data });
+    return NextResponse.json(json, { status: 200 });
   } catch (err) {
     logger.error("[Financials] Approve donation request unexpected error", { err: err instanceof Error ? err.message : String(err) });
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
