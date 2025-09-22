@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     const userId = session.user.id;
 
     // Admin only
-    const { data: isAdmin, error: rbacError } = await supabase.rpc("is_admin", { p_user_id: userId });
+    const { data: isAdmin, error: rbacError } = await supabase.rpc("is_admin");
     if (rbacError || !isAdmin) {
       logger.warn("[Financials] Donor search forbidden", { userId, rbacError });
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -50,60 +50,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ results: [] });
     }
 
-    const ilike = `%${q}%`;
-    const possibleUuid = /^[0-9a-fA-F-]{16,}$/i.test(q);
+    // Call the dedicated search RPC
+    const { data: results, error: searchError } = await supabase
+      .rpc('search_donors_by_admin', { p_query: q });
 
-    // Step 1: find matching profiles by name or phone
-    const { data: profiles, error: profilesError } = await supabase
-      .from("profiles")
-      .select("user_id, full_name, phone_number, address")
-      .or(`full_name.ilike.${ilike},phone_number.ilike.${ilike}`)
-      .limit(20);
-
-    if (profilesError) {
-      logger.error("[Financials] Donor search profiles error", { profilesError });
-      return NextResponse.json({ error: "Search failed" }, { status: 500 });
+    if (searchError) {
+      logger.error('[Financials] Donor search RPC error', { error: searchError });
+      return NextResponse.json({ error: 'Search failed' }, { status: 500 });
     }
 
-    const profileUserIds = (profiles || []).map((p) => p.user_id);
-
-    // Step 2: find donors by donor_number or id or profile user matches
-    let donorsQuery = supabase
-      .from("donors")
-      .select("donor_id, user_id, donor_number")
-      .limit(20);
-
-    // apply filters
-    donorsQuery = donorsQuery.or(
-      [
-        `donor_number.ilike.${ilike}`,
-        possibleUuid ? `donor_id.eq.${q}` : undefined,
-        profileUserIds.length ? `user_id.in.(${profileUserIds.join(",")})` : undefined,
-      ]
-        .filter(Boolean)
-        .join(",")
-    );
-
-    const { data: donors, error: donorsError } = await donorsQuery;
-    if (donorsError) {
-      logger.error("[Financials] Donor search donors error", { donorsError });
-      return NextResponse.json({ error: "Search failed" }, { status: 500 });
-    }
-
-    // Build result set joining profiles data
-    const profileMap = new Map((profiles || []).map((p) => [p.user_id, p]));
-    const results = (donors || []).map((d) => {
-      const prof = profileMap.get(d.user_id);
-      return {
-        donor_id: d.donor_id,
-        donor_number: d.donor_number,
-        full_name: prof?.full_name || null,
-        phone_number: prof?.phone_number || null,
-        address: prof?.address || null,
-      };
-    });
-
-    return NextResponse.json({ results });
+    return NextResponse.json({ results: results || [] });
   } catch (err) {
     logger.error("[Financials] Donor search unexpected error", { err: err instanceof Error ? err.message : String(err) });
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

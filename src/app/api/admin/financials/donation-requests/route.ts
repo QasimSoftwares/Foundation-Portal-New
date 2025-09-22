@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
     const userId = session.user.id;
 
     // RBAC: admin only
-    const { data: isAdmin, error: rbacError } = await supabase.rpc("is_admin", { p_user_id: userId });
+    const { data: isAdmin, error: rbacError } = await supabase.rpc("is_admin");
     if (rbacError || !isAdmin) {
       logger.warn("[Financials] List donation requests forbidden", { userId, rbacError });
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -45,12 +45,10 @@ export async function GET(request: NextRequest) {
     // Get both pending requests and total count in parallel
     const [
       { data: requests, error: requestsError },
-      { count: totalCount, error: countError }
+      { data: totalCount, error: countError }
     ] = await Promise.all([
       supabase.rpc("list_pending_donation_requests"),
-      supabase
-        .from("donation_requests")
-        .select('*', { count: 'exact', head: true })
+      supabase.rpc("count_total_donation_requests")
     ]);
 
     if (requestsError) {

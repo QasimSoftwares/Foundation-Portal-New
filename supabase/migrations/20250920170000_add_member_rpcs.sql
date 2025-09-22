@@ -25,7 +25,7 @@ DECLARE
   caller_id uuid := auth.uid();
   caller_is_admin boolean;
 BEGIN
-  SELECT public.is_admin(caller_id) INTO caller_is_admin;
+  SELECT public.is_admin() INTO caller_is_admin;
 
   IF caller_is_admin THEN
     RETURN QUERY
@@ -75,7 +75,7 @@ DECLARE
   caller_id uuid := auth.uid();
   caller_is_admin boolean;
 BEGIN
-  SELECT public.is_admin(caller_id) INTO caller_is_admin;
+  SELECT public.is_admin() INTO caller_is_admin;
 
   IF caller_is_admin THEN
     RETURN QUERY
@@ -124,7 +124,7 @@ DECLARE
   caller_id uuid := auth.uid();
   caller_is_admin boolean;
 BEGIN
-  SELECT public.is_admin(caller_id) INTO caller_is_admin;
+  SELECT public.is_admin() INTO caller_is_admin;
 
   IF caller_is_admin THEN
     RETURN QUERY

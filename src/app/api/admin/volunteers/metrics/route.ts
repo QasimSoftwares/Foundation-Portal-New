@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     const user = session.user;
 
     // Only admins can view full metrics in the admin endpoint
-    const { data: isAdmin, error: rbacError } = await supabase.rpc("is_admin", { p_user_id: user.id });
+    const { data: isAdmin, error: rbacError } = await supabase.rpc("is_admin");
     if (rbacError || !isAdmin) {
       logger.warn(`User ${user.id} attempted to access volunteer metrics without admin privileges.`, { rbacError });
       return new NextResponse(JSON.stringify({ error: "Forbidden" }), { status: 403 });

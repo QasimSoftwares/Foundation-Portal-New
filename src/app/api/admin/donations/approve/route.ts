@@ -79,91 +79,59 @@ export async function POST(request: NextRequest) {
 
     const donation_id: string = donation.donation_id;
 
-    // 3b) Fetch additional details to render on the receipt
-    // Donor and profile (for name/contact/address)
-    const { data: donorRow, error: donorErr } = await supabase
-      .from('donors')
-      .select('donor_id, donor_number, user_id')
-      .eq('donor_id', donation.donor_id)
-      .single();
-    if (donorErr) {
-      logger.warn('Failed to fetch donor row for receipt', { reqId, userId, donation_id, error: donorErr.message });
-    }
-    console.log('Donor row from DB:', JSON.stringify(donorRow, null, 2));
+    // 3b) Fetch all receipt details using the dedicated RPC
+    const { data: detailsData, error: detailsErr } = await supabase
+      .rpc('get_donation_receipt_details', { p_donation_id: donation_id });
 
-    const { data: donorProfile, error: profileErr } = await supabase
-      .from('profiles')
-      .select('full_name, phone_number, address')
-      .eq('user_id', donorRow?.user_id ?? '')
-      .maybeSingle();
-    console.log('Donor profile from DB:', JSON.stringify(donorProfile, null, 2));
-    if (profileErr) {
-      logger.warn('Failed to fetch donor profile for receipt', { reqId, userId, donation_id, error: profileErr.message });
-    } else if (!donorProfile) {
-      logger.warn('No profile found for donor', { 
-        reqId, 
-        userId, 
-        donorId: donation.donor_id, 
-        profileUserId: donorRow?.user_id 
-      });
+    if (detailsErr) {
+      logger.error('Failed to fetch receipt details via RPC', { reqId, userId, donation_id, error: detailsErr?.message });
+      try {
+        await supabase.rpc('rollback_approved_donation', { p_donation_id: donation_id });
+        logger.info('Rolled back donation after receipt details fetch failure', { reqId, donation_id });
+      } catch (rbErr: any) {
+        logger.error('Rollback after receipt details fetch failure failed', { reqId, donation_id, error: rbErr?.message });
+      }
+      return NextResponse.json({ status: 'error', message: 'Failed to fetch receipt details' }, { status: 500 });
     }
 
-    // Category and project names
-    const { data: categoryRow } = await supabase
-      .from('donation_categories')
-      .select('donation_category_name')
-      .eq('donation_category_id', donation.category_id as any)
-      .maybeSingle();
+    if (!detailsData || detailsData.length === 0) {
+      logger.error('No receipt details found for donation', { reqId, userId, donation_id });
+      try {
+        await supabase.rpc('rollback_approved_donation', { p_donation_id: donation_id });
+        logger.info('Rolled back donation after receipt details were not found', { reqId, donation_id });
+      } catch (rbErr: any) {
+        logger.error('Rollback after receipt details were not found failed', { reqId, donation_id, error: rbErr?.message });
+      }
+      return NextResponse.json({ status: 'error', message: 'Receipt details not found' }, { status: 500 });
+    }
 
-    const { data: projectRow } = await supabase
-      .from('projects')
-      .select('project_name')
-      .eq('project_id', donation.project_id)
-      .maybeSingle();
-
-    // Approver profile (name/email)
-    const { data: approverProfile } = await supabase
-      .from('profiles')
-      .select('full_name, email')
-      .eq('user_id', donation.approved_by)
-      .maybeSingle();
-
-    // Build address string
-    const addr = (donorProfile as any)?.address || {};
-    console.log('Raw address JSON from DB:', JSON.stringify(addr, null, 2));
-    
-    // Extract all possible address parts
-    const street = addr.street || addr.address || addr.address_line1 || '';
-    const city = addr.city || addr.town || addr.locality || '';
-    const state = addr.state || addr.province || addr.region || '';
-    const postal = addr.postal_code || addr.postal || addr.zip || '';
-    const country = addr.country || '';
-    
-    // Compose as single line: "street, city state postal, country"
-    const cityStatePostal = [city, state, postal].filter(Boolean).join(' ').trim();
-    const addressParts = [street, cityStatePostal, country].filter(p => !!p && String(p).trim().length > 0) as string[];
-    const addressStr = addressParts.join(', ');
-    
-    console.log('Computed address string:', addressStr);
+    const receiptDetails = detailsData[0];
+    logger.info('Receipt details fetched', { 
+      reqId, 
+      donation_id: receiptDetails.donation_id,
+      hasDonorName: !!receiptDetails.donor_name,
+      hasPhone: !!receiptDetails.phone_number,
+      hasAddress: !!receiptDetails.address
+    });
 
     // 4) Generate receipt PDF using shared template with real values
     let pdfBytes: Uint8Array;
     try {
       pdfBytes = await generateReceiptPDF({
-        donation_id,
-        donor_id: donation.donor_human_id ?? donorRow?.donor_number,
-        donor_name: donorProfile?.full_name || undefined,
-        phone_number: donorProfile?.phone_number || undefined,
-        address: addressStr || undefined,
-        amount: donation.amount,
-        currency: donation.currency,
-        donation_date: donation.donation_date,
-        payment_method: donation.mode_of_payment,
-        transaction_id: donation.transaction_id ?? undefined,
-        category_name: categoryRow?.donation_category_name ?? undefined,
-        project_name: projectRow?.project_name ?? undefined,
-        donation_type: donation.donation_type,
-        approved_by_name: approverProfile?.full_name || undefined,
+        donation_id: receiptDetails.donation_id,
+        donor_id: receiptDetails.donor_human_id,
+        donor_name: receiptDetails.donor_name || 'N/A',
+        phone_number: receiptDetails.phone_number || 'N/A',
+        address: receiptDetails.address || 'N/A',
+        amount: receiptDetails.amount,
+        currency: receiptDetails.currency,
+        donation_date: receiptDetails.donation_date,
+        payment_method: receiptDetails.payment_method,
+        transaction_id: receiptDetails.transaction_id ?? undefined,
+        category_name: receiptDetails.category_name ?? undefined,
+        project_name: receiptDetails.project_name ?? undefined,
+        donation_type: receiptDetails.donation_type,
+        approved_by_name: receiptDetails.approved_by_name || undefined,
       });
       
       logger.info('PDF receipt generated successfully', { reqId, userId, donation_id, pdfSize: pdfBytes.length });
@@ -187,31 +155,47 @@ export async function POST(request: NextRequest) {
     }
 
     // 5) Upload to Storage directly (admins allowed by RLS policies)
+    const storagePath = `donations/${donation_id}.pdf`;
+    
     try {
       // Log admin status just before upload (helps diagnose RLS issues)
       const { data: roleProbe } = await supabase.rpc('my_roles');
-      logger.info('Starting receipt upload to storage', { reqId, userId, donation_id, is_admin: roleProbe?.is_admin });
-
-      const storagePath = `donations/${donation_id}.pdf`;
+      logger.info('Starting receipt upload to storage', { 
+        reqId, 
+        userId, 
+        donation_id, 
+        is_admin: roleProbe?.is_admin,
+        storagePath
+      });
 
       // Prefer Blob for Node >= 18 to avoid binary payload issues
-      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+      const blob = new Blob([new Uint8Array(pdfBytes)], { type: 'application/pdf' });
 
+      // First, try to remove any existing file to avoid conflicts
+      try {
+        await supabase.storage.from('receipts').remove([storagePath]);
+      } catch (removeErr: unknown) {
+        // Ignore if file doesn't exist
+        const errorMessage = removeErr instanceof Error ? removeErr.message : String(removeErr);
+        logger.info('No existing file to remove or remove failed', { reqId, storagePath, error: errorMessage });
+      }
+
+      // Upload the new file
       const { error: uploadErr } = await supabase.storage
         .from('receipts')
         .upload(storagePath, blob, {
           contentType: 'application/pdf',
           upsert: true,
+          cacheControl: '3600',
         });
 
       if (uploadErr) throw uploadErr;
 
-      // Update donations.receipt_pdf_path with full storage path
-      const fullPath = `receipts/${storagePath}`;
-      const { error: updateErr } = await supabase
-        .from('donations')
-        .update({ receipt_pdf_path: fullPath })
-        .eq('donation_id', donation_id);
+      // Update donations.receipt_pdf_path with just the storage path (without 'receipts/' prefix)
+      const { error: updateErr } = await supabase.rpc('update_donation_receipt_path', {
+        p_donation_id: donation_id,
+        p_receipt_path: storagePath  // Just the path within the bucket, not the full path
+      });
 
       if (updateErr) {
         // Cleanup uploaded file, then rollback approval
@@ -224,7 +208,7 @@ export async function POST(request: NextRequest) {
         throw updateErr;
       }
 
-      logger.info('Receipt uploaded and donation updated', { reqId, userId, donation_id, storagePath: fullPath });
+      logger.info('Receipt uploaded and donation updated', { reqId, userId, donation_id, storagePath });
     } catch (uploadError) {
       const errorMessage = uploadError instanceof Error ? uploadError.message : 'Unknown upload error';
       logger.error('Receipt upload failed', { 
@@ -232,7 +216,8 @@ export async function POST(request: NextRequest) {
         userId, 
         donation_id, 
         error: errorMessage,
-        errorDetails: JSON.stringify(uploadError, Object.getOwnPropertyNames(uploadError))
+        errorDetails: JSON.stringify(uploadError, Object.getOwnPropertyNames(uploadError)),
+        storagePath: storagePath
       });
       
       await logAuthEvent('donation_receipt_upload_failed', { 
@@ -254,6 +239,7 @@ export async function POST(request: NextRequest) {
     // 6) Get the updated donation record with receipt path
     let donationData;
     try {
+      // First try to get the record directly by ID
       const { data, error: fetchErr } = await supabase
         .from('donations')
         .select('*')
@@ -277,7 +263,9 @@ export async function POST(request: NextRequest) {
         reqId, 
         userId, 
         donation_id, 
-        error: errorMessage 
+        error: errorMessage,
+        // Add more details for debugging
+        errorDetails: JSON.stringify(fetchError, Object.getOwnPropertyNames(fetchError))
       });
       
       await logAuthEvent('donation_receipt_verify_failed', { 
@@ -287,22 +275,36 @@ export async function POST(request: NextRequest) {
         error: errorMessage 
       });
       
-      // Rollback since we cannot verify the updated donation record
-      try {
-        await supabase.rpc('rollback_approved_donation', { p_donation_id: donation_id });
-        logger.info('Rolled back donation after verification failure', { reqId, donation_id });
-      } catch (rbErr: any) {
-        logger.error('Rollback after verification failure failed', { reqId, donation_id, error: rbErr?.message });
-      }
-      return NextResponse.json({ status: 'error', message: 'Failed to verify receipt upload' }, { status: 500 });
+      // Don't rollback here since the update was successful
+      // Just return the donation ID without the full record
+      return NextResponse.json({ 
+        status: 'success', 
+        donationId: donation_id, 
+        receiptPath: storagePath,
+        warning: 'Donation approved but could not verify update'
+      }, { status: 200 });
     }
 
     const fullStoragePath = donationData.receipt_pdf_path as string | null;
     
     if (!fullStoragePath) {
-      logger.error('Receipt path not found after upload', { reqId, userId, donation_id });
-      await logAuthEvent('donation_receipt_path_missing', { userId, reqId, donation_id });
-      return NextResponse.json({ error: 'Receipt path not found after upload' }, { status: 500 });
+      logger.error('Receipt path not found after upload', { 
+        reqId, 
+        userId, 
+        donation_id,
+        donationData // Log the full record for debugging
+      });
+      await logAuthEvent('donation_receipt_path_missing', { 
+        userId, 
+        reqId, 
+        donation_id 
+      });
+      // Still return success since the donation was approved
+      return NextResponse.json({ 
+        status: 'success', 
+        donationId: donation_id, 
+        warning: 'Receipt path not found in response but donation was approved'
+      }, { status: 200 });
     }
 
     await logAuthEvent('donation_receipt_uploaded', { userId, reqId, donation_id, storagePath: fullStoragePath });

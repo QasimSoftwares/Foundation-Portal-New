@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     const user = session.user;
 
     // 2. Perform RBAC check: Only admins can access this.
-    const { data: isAdmin, error: rbacError } = await supabase.rpc("is_admin", { p_user_id: user.id });
+    const { data: isAdmin, error: rbacError } = await supabase.rpc("is_admin");
 
     if (rbacError || !isAdmin) {
       logger.warn(`User ${user.id} attempted to access donor metrics without admin privileges.`, { rbacError });

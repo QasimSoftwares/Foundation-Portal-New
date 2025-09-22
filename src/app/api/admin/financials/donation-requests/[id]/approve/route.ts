@@ -37,7 +37,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const { id: reqId } = await context.params;
 
     // RBAC: admin only
-    const { data: isAdmin, error: rbacError } = await supabase.rpc("is_admin", { p_user_id: userId });
+    const { data: isAdmin, error: rbacError } = await supabase.rpc("is_admin");
     if (rbacError || !isAdmin) {
       logger.warn("[Financials] Approve donation request forbidden", { userId, rbacError });
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });

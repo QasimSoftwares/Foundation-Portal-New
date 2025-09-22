@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     const userId = session.user.id;
 
     // RBAC: admin only
-    const { data: isAdmin, error: rbacError } = await supabase.rpc("is_admin", { p_user_id: userId });
+    const { data: isAdmin, error: rbacError } = await supabase.rpc("is_admin");
     if (rbacError || !isAdmin) {
       logger.warn("[Financials] Create donation request forbidden", { userId, rbacError });
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });

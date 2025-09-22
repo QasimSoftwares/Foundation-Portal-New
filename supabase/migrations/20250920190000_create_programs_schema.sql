@@ -139,7 +139,7 @@ BEGIN
       ON public.donation_categories
       FOR SELECT
       TO authenticated
-      USING (is_active = TRUE OR public.is_admin(auth.uid()));
+      USING (is_active = TRUE OR public.is_admin());
   END IF;
 
   -- INSERT: admin only
@@ -150,7 +150,7 @@ BEGIN
       ON public.donation_categories
       FOR INSERT
       TO authenticated
-      WITH CHECK (public.is_admin(auth.uid()));
+      WITH CHECK (public.is_admin());
   END IF;
 
   -- UPDATE: admin only
@@ -161,8 +161,8 @@ BEGIN
       ON public.donation_categories
       FOR UPDATE
       TO authenticated
-      USING (public.is_admin(auth.uid()))
-      WITH CHECK (public.is_admin(auth.uid()));
+      USING (public.is_admin())
+      WITH CHECK (public.is_admin());
   END IF;
 
   -- DELETE: admin only (rare, but consistent)
@@ -173,7 +173,7 @@ BEGIN
       ON public.donation_categories
       FOR DELETE
       TO authenticated
-      USING (public.is_admin(auth.uid()));
+      USING (public.is_admin());
   END IF;
 END $$;
 
@@ -189,7 +189,7 @@ BEGIN
       FOR SELECT
       TO authenticated
       USING (
-        public.is_admin(auth.uid())
+        public.is_admin()
         OR (
           is_active = TRUE AND EXISTS (
             SELECT 1 FROM public.donation_categories c
@@ -208,7 +208,7 @@ BEGIN
       ON public.projects
       FOR INSERT
       TO authenticated
-      WITH CHECK (public.is_admin(auth.uid()));
+      WITH CHECK (public.is_admin());
   END IF;
 
   -- UPDATE: admin only
@@ -219,8 +219,8 @@ BEGIN
       ON public.projects
       FOR UPDATE
       TO authenticated
-      USING (public.is_admin(auth.uid()))
-      WITH CHECK (public.is_admin(auth.uid()));
+      USING (public.is_admin())
+      WITH CHECK (public.is_admin());
   END IF;
 
   -- DELETE: admin only
@@ -231,7 +231,7 @@ BEGIN
       ON public.projects
       FOR DELETE
       TO authenticated
-      USING (public.is_admin(auth.uid()));
+      USING (public.is_admin());
   END IF;
 END $$;
 
@@ -249,7 +249,7 @@ AS $$
 DECLARE
   v_new_id UUID;
 BEGIN
-  IF NOT public.is_admin(auth.uid()) THEN
+  IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Unauthorized';
   END IF;
 
@@ -276,7 +276,7 @@ LANGUAGE plpgsql
 SECURITY INVOKER
 AS $$
 BEGIN
-  IF NOT public.is_admin(auth.uid()) THEN
+  IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Unauthorized';
   END IF;
 
@@ -309,7 +309,7 @@ DECLARE
   v_new_id UUID;
   v_active BOOLEAN;
 BEGIN
-  IF NOT public.is_admin(auth.uid()) THEN
+  IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Unauthorized';
   END IF;
 
@@ -345,7 +345,7 @@ LANGUAGE plpgsql
 SECURITY INVOKER
 AS $$
 BEGIN
-  IF NOT public.is_admin(auth.uid()) THEN
+  IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Unauthorized';
   END IF;
 
@@ -369,7 +369,7 @@ LANGUAGE plpgsql
 SECURITY INVOKER
 AS $$
 BEGIN
-  IF NOT public.is_admin(auth.uid()) THEN
+  IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Unauthorized';
   END IF;
 
@@ -406,7 +406,7 @@ LANGUAGE plpgsql
 SECURITY INVOKER
 AS $$
 BEGIN
-  IF NOT public.is_admin(auth.uid()) THEN
+  IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Unauthorized';
   END IF;
 
@@ -438,7 +438,7 @@ LANGUAGE plpgsql
 SECURITY INVOKER
 AS $$
 BEGIN
-  IF NOT public.is_admin(auth.uid()) THEN
+  IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Unauthorized';
   END IF;
 
@@ -480,7 +480,7 @@ DECLARE
   v_caller uuid := auth.uid();
   v_is_admin boolean;
 BEGIN
-  SELECT public.is_admin(v_caller) INTO v_is_admin;
+  SELECT public.is_admin() INTO v_is_admin;
   IF v_is_admin THEN
     RETURN QUERY
     SELECT dc.donation_category_id, dc.donation_category_name, dc.description, dc.is_active, dc.created_at, dc.updated_at, dc.category_deactivated_at, dc.category_deactivated_by
@@ -520,7 +520,7 @@ DECLARE
   v_caller uuid := auth.uid();
   v_is_admin boolean;
 BEGIN
-  SELECT public.is_admin(v_caller) INTO v_is_admin;
+  SELECT public.is_admin() INTO v_is_admin;
   IF v_is_admin THEN
     RETURN QUERY
     SELECT p.project_id, p.project_name, p.project_description, p.start_date, p.end_date, p.target_amount, p.is_active, p.created_at, p.updated_at, p.created_by, p.donation_category_id, p.deactivated_at, p.project_deactivated_by, p.project_status

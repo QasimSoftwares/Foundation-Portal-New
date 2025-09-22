@@ -4,18 +4,9 @@
 -- - Non-admins can only see their own records using auth.uid()
 -- - Uses existing tables: user_roles, role_requests, profiles
 
--- Ensure is_admin exists (idempotent)
-CREATE OR REPLACE FUNCTION public.is_admin(p_user_id uuid)
-RETURNS boolean
-LANGUAGE sql
-SECURITY INVOKER
-AS $$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.user_roles
-    WHERE user_id = p_user_id AND is_admin = TRUE
-  );
-$$;
+-- This file previously defined a broken is_admin(uuid) function.
+-- That function has been removed as of migration 20250922130000_definitive_is_admin_cleanup.sql.
+-- All functions below have been updated to call the canonical, zero-argument public.is_admin().
 
 -- Total volunteers (approved)
 CREATE OR REPLACE FUNCTION public.get_total_volunteers()
@@ -28,7 +19,7 @@ DECLARE
   caller_id uuid := auth.uid();
   caller_is_admin boolean;
 BEGIN
-  SELECT public.is_admin(caller_id) INTO caller_is_admin;
+  SELECT public.is_admin() INTO caller_is_admin;
 
   IF caller_is_admin THEN
     SELECT COUNT(*) INTO total_count
@@ -64,7 +55,7 @@ DECLARE
   caller_id uuid := auth.uid();
   caller_is_admin boolean;
 BEGIN
-  SELECT public.is_admin(caller_id) INTO caller_is_admin;
+  SELECT public.is_admin() INTO caller_is_admin;
 
   IF caller_is_admin THEN
     RETURN QUERY
@@ -115,7 +106,7 @@ DECLARE
   caller_id uuid := auth.uid();
   caller_is_admin boolean;
 BEGIN
-  SELECT public.is_admin(caller_id) INTO caller_is_admin;
+  SELECT public.is_admin() INTO caller_is_admin;
 
   IF caller_is_admin THEN
     RETURN QUERY
@@ -168,7 +159,7 @@ DECLARE
   caller_id uuid := auth.uid();
   caller_is_admin boolean;
 BEGIN
-  SELECT public.is_admin(caller_id) INTO caller_is_admin;
+  SELECT public.is_admin() INTO caller_is_admin;
 
   IF caller_is_admin THEN
     RETURN QUERY

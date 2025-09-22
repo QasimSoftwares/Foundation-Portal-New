@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
     const user = session.user;
 
     // Admin-only admin endpoint
-    const { data: isAdmin, error: rbacError } = await supabase.rpc("is_admin", { p_user_id: user.id });
+    const { data: isAdmin, error: rbacError } = await supabase.rpc("is_admin");
     if (rbacError || !isAdmin) {
       return new NextResponse(JSON.stringify({ error: "Forbidden" }), { status: 403 });
     }

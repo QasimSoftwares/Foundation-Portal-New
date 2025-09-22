@@ -5,7 +5,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const pdfBytes = await generateReceiptPDF(body);
-    return new NextResponse(pdfBytes, {
+    return new NextResponse(new Uint8Array(pdfBytes), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': 'inline; filename="donation-receipt.pdf"',
