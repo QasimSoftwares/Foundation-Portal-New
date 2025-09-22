@@ -1,25 +1,20 @@
 'use client';
 
-import { SignOutButton } from '@/components/auth/sign-out-button';
 import AdminSidebar from './AdminSidebar';
 import NonAdminSidebar from './NonAdminSidebar';
-import { RoleSwitcher } from '@/components/roles/RoleSwitcher';
 import { useRoleContext } from '@/components/roles/RoleProvider';
-import { ROLE_DASHBOARDS } from '@/config/routes';
 
 export default function Sidebar() {
   const { activeRole, roles, loading } = useRoleContext();
   const currentRole = activeRole || 'viewer';
   const isAdminView = currentRole === 'admin';
-  const dashboardPath = ROLE_DASHBOARDS[currentRole];
 
   console.log('Sidebar - Current state:', {
     activeRole,
     roles,
     loading,
     currentRole,
-    isAdminView,
-    dashboardPath
+    isAdminView
   });
 
   return (
@@ -30,7 +25,7 @@ export default function Sidebar() {
           {isAdminView ? (
             <AdminSidebar />
           ) : (
-            <NonAdminSidebar role={currentRole} dashboardPath={dashboardPath} />
+            <NonAdminSidebar role={currentRole} />
           )}
         </div>
         

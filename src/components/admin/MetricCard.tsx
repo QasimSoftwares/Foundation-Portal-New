@@ -11,6 +11,7 @@ type MetricCardProps = {
   className?: string;
   accent?: "green" | "blue" | "amber" | "rose";
   isLoading?: boolean;
+  subtext?: string;
 };
 
 const accentClasses: Record<NonNullable<MetricCardProps["accent"]>, string> = {
@@ -26,7 +27,8 @@ export function MetricCard({
   icon, 
   className, 
   accent = "blue",
-  isLoading = false 
+  isLoading = false,
+  subtext
 }: MetricCardProps) {
   return (
     <div
@@ -53,6 +55,9 @@ export function MetricCard({
                 </>
               )}
             </div>
+            {subtext && !isLoading && (
+              <p className="mt-1 text-xs text-gray-500">{subtext}</p>
+            )}
           </div>
           {icon && (
             <span 

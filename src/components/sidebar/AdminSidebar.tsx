@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Settings, Users, Shield, Banknote, UserCheck, BarChart3, Target, DollarSign, FileText } from 'lucide-react';
+import { Home, Settings, Users, Shield, Banknote, UserCheck, BarChart3, Target, DollarSign, FileText, Calendar } from 'lucide-react';
 
 export default function AdminSidebar() {
   const pathname = usePathname();
@@ -12,6 +12,7 @@ export default function AdminSidebar() {
       <SidebarLink href="/admin/dashboard" icon={<Home className="h-5 w-5" />} active={pathname?.startsWith('/admin/dashboard')}>Dashboard</SidebarLink>
       <SidebarLink href="/admin/donors" icon={<Banknote className="h-5 w-5" />} active={pathname?.startsWith('/admin/donors')}>Donors</SidebarLink>
       <SidebarLink href="/admin/volunteers" icon={<UserCheck className="h-5 w-5" />} active={pathname?.startsWith('/admin/volunteers')}>Volunteers</SidebarLink>
+      <SidebarLink href="/admin/events" icon={<Calendar className="h-5 w-5" />} active={pathname?.startsWith('/admin/events')}>Events</SidebarLink>
       <SidebarLink href="/admin/members" icon={<Users className="h-5 w-5" />} active={pathname?.startsWith('/admin/members')}>Members</SidebarLink>
       <SidebarLink href="/admin/programs" icon={<Target className="h-5 w-5" />} active={pathname?.startsWith('/admin/programs')}>Programs</SidebarLink>
       <SidebarLink href="/admin/financials" icon={<DollarSign className="h-5 w-5" />} active={pathname?.startsWith('/admin/financials') || pathname?.startsWith('/donations')}>Financials</SidebarLink>
